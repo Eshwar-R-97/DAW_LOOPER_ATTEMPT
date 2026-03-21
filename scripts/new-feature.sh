@@ -15,8 +15,8 @@ fi
 
 BRANCH="feature/$FEATURE_NAME"
 
-# Ensure working tree is clean before switching branches
-if [ -n "$(git status --porcelain)" ]; then
+# Ensure no tracked file changes before switching branches (ignore untracked files)
+if [ -n "$(git diff --name-only)" ] || [ -n "$(git diff --cached --name-only)" ]; then
   echo "Error: You have uncommitted changes. Commit or stash them first."
   exit 1
 fi
