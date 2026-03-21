@@ -5,11 +5,11 @@ export class AudioMixer {
   private masterVolume: number
 
   constructor(masterVolume = 1.0) {
-    this.masterVolume = clamp(masterVolume, 0.0, 1.0)
+    this.masterVolume = clamp(masterVolume, 0.0, 2.0)
   }
 
   setMasterVolume(value: number): void {
-    this.masterVolume = clamp(value, 0.0, 1.0)
+    this.masterVolume = clamp(value, 0.0, 2.0)
   }
 
   getMasterVolume(): number {

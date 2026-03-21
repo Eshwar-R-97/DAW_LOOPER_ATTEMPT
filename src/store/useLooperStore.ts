@@ -115,6 +115,7 @@ export const useLooperStore = create<LooperStore>((set, get) => {
 
     setMasterVolume: (volume: number) => {
       get().engine?.setMasterVolume(volume)
+      set({ masterVolume: volume })
     },
 
     undoLastTrack: () => {

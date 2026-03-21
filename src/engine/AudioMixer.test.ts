@@ -36,10 +36,16 @@ describe('AudioMixer', () => {
       expect(mixer.getMasterVolume()).toBe(0.0)
     })
 
-    it('clamps to 1.0 maximum', () => {
+    it('clamps to 2.0 maximum', () => {
       const mixer = new AudioMixer()
       mixer.setMasterVolume(5)
-      expect(mixer.getMasterVolume()).toBe(1.0)
+      expect(mixer.getMasterVolume()).toBe(2.0)
+    })
+
+    it('accepts values up to 2.0', () => {
+      const mixer = new AudioMixer()
+      mixer.setMasterVolume(1.5)
+      expect(mixer.getMasterVolume()).toBe(1.5)
     })
   })
 

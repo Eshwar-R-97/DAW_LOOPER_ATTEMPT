@@ -1,5 +1,6 @@
 import type { TrackSnapshot } from '../types'
 import { WaveformDisplay } from './WaveformDisplay'
+import { RotaryKnob } from './RotaryKnob'
 
 interface TrackRowProps {
   track: TrackSnapshot
@@ -8,12 +9,6 @@ interface TrackRowProps {
 }
 
 export function TrackRow({ track, onToggleMute, onSetVolume }: TrackRowProps) {
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onSetVolume(Number(e.target.value) / 100)
-  }
-
-  const volumePercent = Math.round(track.volume * 100 / 2) // 0–2 mapped to 0%–100%
-
   return (
     <div className={`track-row ${track.state}`}>
       <div className="track-info">
@@ -37,15 +32,11 @@ export function TrackRow({ track, onToggleMute, onSetVolume }: TrackRowProps) {
           {track.isMuted ? 'Unmute' : 'Mute'}
         </button>
 
-        <span className="volume-label">{volumePercent}%</span>
-        <input
-          type="range"
-          className="volume-slider"
-          min={0}
-          max={200}
-          value={Math.round(track.volume * 100)}
-          onChange={handleVolumeChange}
-          aria-label="Volume"
+        <RotaryKnob
+          value={track.volume}
+          onChange={onSetVolume}
+          label="VOL"
+          size={40}
         />
       </div>
     </div>
