@@ -4,6 +4,7 @@ import { LooperState } from './types'
 import { TransportBar } from './components/TransportBar'
 import { LoopProgressBar } from './components/LoopProgressBar'
 import { TrackList } from './components/TrackList'
+import { RotaryKnob } from './components/RotaryKnob'
 
 function App() {
   const looperState = useLooperStore((s) => s.looperState)
@@ -23,6 +24,8 @@ function App() {
   const redoTrack = useLooperStore((s) => s.redoTrack)
   const latencyOffsetMs = useLooperStore((s) => s.latencyOffsetMs)
   const setLatencyOffset = useLooperStore((s) => s.setLatencyOffset)
+  const masterVolume = useLooperStore((s) => s.masterVolume)
+  const setMasterVolume = useLooperStore((s) => s.setMasterVolume)
   const dispose = useLooperStore((s) => s.dispose)
 
   useEffect(() => {
@@ -110,18 +113,26 @@ function App() {
         onSetVolume={setTrackVolume}
       />
 
-      <div className="latency-adjust">
-        <label>
-          Sync offset: {latencyOffsetMs > 0 ? '→ ' : latencyOffsetMs < 0 ? '← ' : ''}{Math.abs(latencyOffsetMs)}ms
-        </label>
-        <input
-          type="range"
-          min="-500"
-          max="500"
-          step="5"
-          value={latencyOffsetMs}
-          onChange={(e) => setLatencyOffset(Number(e.target.value))}
+      <div className="bottom-controls">
+        <RotaryKnob
+          value={masterVolume}
+          onChange={setMasterVolume}
+          label="MASTER"
+          size={56}
         />
+        <div className="latency-adjust">
+          <label>
+            Sync offset: {latencyOffsetMs > 0 ? '→ ' : latencyOffsetMs < 0 ? '← ' : ''}{Math.abs(latencyOffsetMs)}ms
+          </label>
+          <input
+            type="range"
+            min="-500"
+            max="500"
+            step="5"
+            value={latencyOffsetMs}
+            onChange={(e) => setLatencyOffset(Number(e.target.value))}
+          />
+        </div>
       </div>
 
       <div className="keyboard-hints">

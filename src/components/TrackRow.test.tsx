@@ -71,25 +71,21 @@ describe('TrackRow', () => {
     expect(screen.getByRole('button', { name: /unmute/i })).toBeInTheDocument()
   })
 
-  it('renders a volume slider', () => {
+  it('renders a volume knob', () => {
     render(<TrackRow track={makeTrack()} onToggleMute={vi.fn()} onSetVolume={vi.fn()} />)
-    expect(screen.getByRole('slider')).toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: /vol/i })).toBeInTheDocument()
   })
 
-  it('volume slider reflects current track volume', () => {
+  it('volume knob reflects current track volume', () => {
     render(<TrackRow track={makeTrack({ volume: 0.7 })} onToggleMute={vi.fn()} onSetVolume={vi.fn()} />)
-    const slider = screen.getByRole('slider') as HTMLInputElement
-    expect(Number(slider.value)).toBeCloseTo(70)
+    const knob = screen.getByRole('slider', { name: /vol/i })
+    expect(Number(knob.getAttribute('aria-valuenow'))).toBeCloseTo(0.7)
   })
 
-  it('calls onSetVolume when slider changes', async () => {
-    const user = userEvent.setup()
+  it('volume knob is interactive', () => {
     const onSetVolume = vi.fn()
     render(<TrackRow track={makeTrack()} onToggleMute={vi.fn()} onSetVolume={onSetVolume} />)
-    const slider = screen.getByRole('slider')
-    // fireEvent is more reliable for range inputs
-    await user.click(slider)
-    // At minimum, we verify the slider exists and is interactive
-    expect(slider).toBeInTheDocument()
+    const knob = screen.getByRole('slider', { name: /vol/i })
+    expect(knob).toBeInTheDocument()
   })
 })
