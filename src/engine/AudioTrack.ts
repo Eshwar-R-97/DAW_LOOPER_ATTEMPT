@@ -12,6 +12,8 @@ export class AudioTrack {
   private _state: TrackState
   private _volume: number
   private _isMuted: boolean
+  private _isDeleted: boolean
+  private _savedVolume: number
   private _waveformData: number[]
 
   constructor(id: string, index: number, buffer: Float32Array, sampleRate: number) {
@@ -22,6 +24,8 @@ export class AudioTrack {
     this._state = TrackState.PLAYING
     this._volume = 1.0
     this._isMuted = false
+    this._isDeleted = false
+    this._savedVolume = 1.0
     this._waveformData = AudioTrack.generateWaveformData(buffer, DEFAULT_WAVEFORM_POINTS)
   }
 
@@ -35,6 +39,10 @@ export class AudioTrack {
 
   get isMuted(): boolean {
     return this._isMuted
+  }
+
+  get isDeleted(): boolean {
+    return this._isDeleted
   }
 
   get duration(): number {
@@ -59,6 +67,17 @@ export class AudioTrack {
     return this._volume * this._volume
   }
 
+  softDelete(): void {
+    this._savedVolume = this._volume
+    this._volume = 0
+    this._isDeleted = true
+  }
+
+  restore(): void {
+    this._volume = this._savedVolume
+    this._isDeleted = false
+  }
+
   toggleMute(): void {
     this._isMuted = !this._isMuted
     this._state = this._isMuted ? TrackState.MUTED : TrackState.PLAYING
@@ -74,7 +93,7 @@ export class AudioTrack {
 
   getSample(position: number): number {
     if (position < 0) return 0
-    if (this._isMuted) return 0
+    if (this._isMuted || this._isDeleted) return 0
 
     const wrappedPosition = position % this.buffer.length
     return this.buffer[wrappedPosition] * this.gain
@@ -83,7 +102,7 @@ export class AudioTrack {
   getSampleBatch(startPosition: number, length: number): Float32Array {
     const output = new Float32Array(length)
 
-    if (this._isMuted) return output
+    if (this._isMuted || this._isDeleted) return output
 
     for (let i = 0; i < length; i++) {
       const position = (startPosition + i) % this.buffer.length
@@ -101,6 +120,7 @@ export class AudioTrack {
       duration: this.duration,
       volume: this._volume,
       isMuted: this._isMuted,
+      isDeleted: this._isDeleted,
       waveformData: this._waveformData,
     }
   }

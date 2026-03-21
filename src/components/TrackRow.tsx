@@ -6,11 +6,20 @@ interface TrackRowProps {
   track: TrackSnapshot
   onToggleMute: () => void
   onSetVolume: (volume: number) => void
+  onDelete: () => void
 }
 
-export function TrackRow({ track, onToggleMute, onSetVolume }: TrackRowProps) {
+export function TrackRow({ track, onToggleMute, onSetVolume, onDelete }: TrackRowProps) {
   return (
     <div className={`track-row ${track.state}`}>
+      <button
+        className="delete-button"
+        onClick={onDelete}
+        aria-label={`Delete Track ${track.index + 1}`}
+      >
+        &times;
+      </button>
+
       <div className="track-info">
         <span
           className={`track-state-indicator ${track.state}`}
