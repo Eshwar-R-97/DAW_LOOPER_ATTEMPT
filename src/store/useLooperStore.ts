@@ -26,6 +26,7 @@ interface LooperStore {
   toggleTrackMute: (trackId: string) => void
   setTrackVolume: (trackId: string, volume: number) => void
   setMasterVolume: (volume: number) => void
+  deleteTrack: (trackId: string) => void
   undoLastTrack: () => void
   redoTrack: () => void
   latencyOffsetMs: number
@@ -116,6 +117,10 @@ export const useLooperStore = create<LooperStore>((set, get) => {
     setMasterVolume: (volume: number) => {
       get().engine?.setMasterVolume(volume)
       set({ masterVolume: volume })
+    },
+
+    deleteTrack: (trackId: string) => {
+      get().engine?.deleteTrack(trackId)
     },
 
     undoLastTrack: () => {

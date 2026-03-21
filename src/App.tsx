@@ -20,6 +20,7 @@ function App() {
   const stopAll = useLooperStore((s) => s.stopAll)
   const toggleTrackMute = useLooperStore((s) => s.toggleTrackMute)
   const setTrackVolume = useLooperStore((s) => s.setTrackVolume)
+  const deleteTrack = useLooperStore((s) => s.deleteTrack)
   const undoLastTrack = useLooperStore((s) => s.undoLastTrack)
   const redoTrack = useLooperStore((s) => s.redoTrack)
   const latencyOffsetMs = useLooperStore((s) => s.latencyOffsetMs)
@@ -111,6 +112,7 @@ function App() {
         tracks={tracks}
         onToggleMute={toggleTrackMute}
         onSetVolume={setTrackVolume}
+        onDeleteTrack={deleteTrack}
       />
 
       <div className="bottom-controls">

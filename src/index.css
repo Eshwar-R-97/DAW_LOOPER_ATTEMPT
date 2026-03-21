@@ -194,6 +194,7 @@ body {
 
 /* === Track Row === */
 .track-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -202,6 +203,37 @@ body {
   border-radius: var(--radius);
   border: 1px solid var(--border);
   transition: border-color 0.15s;
+}
+
+/* === Delete Button === */
+.delete-button {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.track-row:hover .delete-button {
+  opacity: 0.6;
+}
+
+.delete-button:hover {
+  opacity: 1 !important;
+  color: var(--accent-red);
 }
 
 .track-row.recording {

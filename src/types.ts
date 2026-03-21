@@ -22,6 +22,7 @@ export interface TrackSnapshot {
   duration: number
   volume: number
   isMuted: boolean
+  isDeleted: boolean
   waveformData: number[]
 }
 

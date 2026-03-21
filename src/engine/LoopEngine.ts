@@ -268,6 +268,18 @@ export class LoopEngine {
     this.emitSnapshot()
   }
 
+  deleteTrack(trackId: string): void {
+    const track = this.getTrackById(trackId)
+    track.softDelete()
+    this.emitSnapshot()
+  }
+
+  restoreTrack(trackId: string): void {
+    const track = this.getTrackById(trackId)
+    track.restore()
+    this.emitSnapshot()
+  }
+
   // --- Undo/Redo ---
 
   undoLastTrack(): TrackSnapshot | null {
