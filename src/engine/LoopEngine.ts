@@ -155,7 +155,14 @@ export class LoopEngine {
       // We take the LAST complete loop so the user can practice over multiple loops
       // and only the final one is kept.
       const loopLen = this.masterLoopLength
-      const firstBoundary = loopLen - this.recordStartPosition // samples until first loop-0 boundary
+      let firstBoundary = loopLen - this.recordStartPosition // samples until first loop-0 boundary
+
+      // If the recording extends past the first boundary, the user has looped
+      // back to position 0. Redefine firstBoundary to 0 so subsequent loops
+      // are aligned from position 0 rather than the original record-start offset.
+      if (buffer.length > firstBoundary) {
+        firstBoundary = 0
+      }
 
       // How many complete loops exist after the first boundary?
       const samplesAfterBoundary = buffer.length > firstBoundary ? buffer.length - firstBoundary : 0
