@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { useLooperStore } from './store/useLooperStore'
 import { LooperState } from './types'
 import { TransportBar } from './components/TransportBar'
@@ -6,8 +6,11 @@ import { LoopProgressBar } from './components/LoopProgressBar'
 import { TrackList } from './components/TrackList'
 import { RotaryKnob } from './components/RotaryKnob'
 import { SampleFinderPanel } from './components/SampleFinderPanel'
+import { ModeSelector } from './components/ModeSelector'
+import { DawView } from './components/DawView'
 
 function App() {
+  const [appMode, setAppMode] = useState<'looper' | 'daw'>('looper')
   const looperState = useLooperStore((s) => s.looperState)
   const tracks = useLooperStore((s) => s.tracks)
   const masterLoopLength = useLooperStore((s) => s.masterLoopLength)
@@ -94,63 +97,68 @@ function App() {
     <div className="app">
       <header className="app-header">
         <h1>DAW Looper</h1>
-        {error && <div className="error-banner">{error}</div>}
+        <ModeSelector mode={appMode} onChange={setAppMode} />
+        {error && appMode === 'looper' && <div className="error-banner">{error}</div>}
       </header>
 
-      <TransportBar
-        looperState={looperState}
-        onRecord={handleRecord}
-        onPlayStop={handlePlayStop}
-        onUndo={undoLastTrack}
-        onRedo={redoTrack}
-        canUndo={tracks.length > 0}
-        canRedo={false}
-      />
+      {appMode === 'daw' && <DawView />}
 
-      <LoopProgressBar
-        currentPosition={progressPosition}
-        isPlaying={looperState === LooperState.PLAYING}
-      />
-
-      <SampleFinderPanel onLoadSample={loadTrackFromUrl} />
-
-      <TrackList
-        tracks={tracks}
-        onToggleMute={toggleTrackMute}
-        onSetVolume={setTrackVolume}
-        onDeleteTrack={deleteTrack}
-        onSetTrackReverb={setTrackReverb}
-        onSetTrackPitch={setTrackPitch}
-      />
-
-      <div className="bottom-controls">
-        <RotaryKnob
-          value={masterVolume}
-          onChange={setMasterVolume}
-          label="MASTER"
-          size={56}
+      {appMode === 'looper' && <>
+        <TransportBar
+          looperState={looperState}
+          onRecord={handleRecord}
+          onPlayStop={handlePlayStop}
+          onUndo={undoLastTrack}
+          onRedo={redoTrack}
+          canUndo={tracks.length > 0}
+          canRedo={false}
         />
-        <div className="latency-adjust">
-          <label>
-            Sync offset: {latencyOffsetMs > 0 ? '→ ' : latencyOffsetMs < 0 ? '← ' : ''}{Math.abs(latencyOffsetMs)}ms
-          </label>
-          <input
-            type="range"
-            min="-500"
-            max="500"
-            step="5"
-            value={latencyOffsetMs}
-            onChange={(e) => setLatencyOffset(Number(e.target.value))}
-          />
-        </div>
-      </div>
 
-      <div className="keyboard-hints">
-        <span><kbd>R</kbd> Record</span>
-        <span><kbd>Space</kbd> Play/Stop</span>
-        <span><kbd>Ctrl+Z</kbd> Undo</span>
-        <span><kbd>Ctrl+Shift+Z</kbd> Redo</span>
-      </div>
+        <LoopProgressBar
+          currentPosition={progressPosition}
+          isPlaying={looperState === LooperState.PLAYING}
+        />
+
+        <SampleFinderPanel onLoadSample={loadTrackFromUrl} />
+
+        <TrackList
+          tracks={tracks}
+          onToggleMute={toggleTrackMute}
+          onSetVolume={setTrackVolume}
+          onDeleteTrack={deleteTrack}
+          onSetTrackReverb={setTrackReverb}
+          onSetTrackPitch={setTrackPitch}
+        />
+
+        <div className="bottom-controls">
+          <RotaryKnob
+            value={masterVolume}
+            onChange={setMasterVolume}
+            label="MASTER"
+            size={56}
+          />
+          <div className="latency-adjust">
+            <label>
+              Sync offset: {latencyOffsetMs > 0 ? '→ ' : latencyOffsetMs < 0 ? '← ' : ''}{Math.abs(latencyOffsetMs)}ms
+            </label>
+            <input
+              type="range"
+              min="-500"
+              max="500"
+              step="5"
+              value={latencyOffsetMs}
+              onChange={(e) => setLatencyOffset(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <div className="keyboard-hints">
+          <span><kbd>R</kbd> Record</span>
+          <span><kbd>Space</kbd> Play/Stop</span>
+          <span><kbd>Ctrl+Z</kbd> Undo</span>
+          <span><kbd>Ctrl+Shift+Z</kbd> Redo</span>
+        </div>
+      </>}
     </div>
   )
 }
