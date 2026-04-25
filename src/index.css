@@ -801,3 +801,12 @@ body {
   border: 2px solid var(--border);
   background: var(--bg-tertiary);
 }
+
+.fx-pitch-readout {
+  font-size: 0.6rem;
+  font-family: monospace;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  min-width: 48px;
+  text-align: center;
+}

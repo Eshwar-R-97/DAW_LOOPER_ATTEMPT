@@ -27,6 +27,7 @@ interface LooperStore {
   setTrackVolume: (trackId: string, volume: number) => void
   setMasterVolume: (volume: number) => void
   setTrackReverb: (trackId: string, amount: number) => void
+  setTrackPitch: (trackId: string, octaves: number) => void
   deleteTrack: (trackId: string) => void
   undoLastTrack: () => void
   redoTrack: () => void
@@ -125,6 +126,10 @@ export const useLooperStore = create<LooperStore>((set, get) => {
 
     setTrackReverb: (trackId: string, amount: number) => {
       get().engine?.setTrackReverb(trackId, amount)
+    },
+
+    setTrackPitch: (trackId: string, octaves: number) => {
+      get().engine?.setTrackPitch(trackId, octaves)
     },
 
     deleteTrack: (trackId: string) => {

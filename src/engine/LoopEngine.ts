@@ -306,6 +306,12 @@ export class LoopEngine {
     this.emitSnapshot()
   }
 
+  setTrackPitch(trackId: string, octaves: number): void {
+    const track = this.getTrackById(trackId)
+    track.setPitch(octaves)
+    this.emitSnapshot()
+  }
+
   deleteTrack(trackId: string): void {
     const track = this.getTrackById(trackId)
     track.softDelete()

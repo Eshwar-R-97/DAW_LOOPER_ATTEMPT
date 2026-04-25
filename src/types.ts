@@ -25,6 +25,7 @@ export interface TrackSnapshot {
   isDeleted: boolean
   waveformData: number[]
   reverbAmount: number
+  pitchOctaves: number
 }
 
 /** Configuration for the audio engine */

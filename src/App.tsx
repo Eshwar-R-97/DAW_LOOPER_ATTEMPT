@@ -29,6 +29,7 @@ function App() {
   const masterVolume = useLooperStore((s) => s.masterVolume)
   const setMasterVolume = useLooperStore((s) => s.setMasterVolume)
   const setTrackReverb = useLooperStore((s) => s.setTrackReverb)
+  const setTrackPitch = useLooperStore((s) => s.setTrackPitch)
   const loadTrackFromUrl = useLooperStore((s) => s.loadTrackFromUrl)
   const dispose = useLooperStore((s) => s.dispose)
 
@@ -119,6 +120,7 @@ function App() {
         onSetVolume={setTrackVolume}
         onDeleteTrack={deleteTrack}
         onSetTrackReverb={setTrackReverb}
+        onSetTrackPitch={setTrackPitch}
       />
 
       <div className="bottom-controls">

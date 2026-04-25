@@ -10,6 +10,7 @@ interface TrackRowProps {
   onSetVolume: (volume: number) => void
   onDelete: () => void
   onSetReverb: (amount: number) => void
+  onSetPitch: (octaves: number) => void
 }
 
 function FxIcon() {
@@ -22,7 +23,7 @@ function FxIcon() {
   )
 }
 
-export function TrackRow({ track, onToggleMute, onSetVolume, onDelete, onSetReverb }: TrackRowProps) {
+export function TrackRow({ track, onToggleMute, onSetVolume, onDelete, onSetReverb, onSetPitch }: TrackRowProps) {
   const [fxOpen, setFxOpen] = useState(false)
 
   return (
@@ -77,6 +78,8 @@ export function TrackRow({ track, onToggleMute, onSetVolume, onDelete, onSetReve
         <TrackEffectsPanel
           reverbAmount={track.reverbAmount}
           onSetReverb={onSetReverb}
+          pitchOctaves={track.pitchOctaves}
+          onSetPitch={onSetPitch}
         />
       )}
     </div>

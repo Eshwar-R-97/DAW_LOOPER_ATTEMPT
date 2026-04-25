@@ -1,5 +1,7 @@
 export class TrackEffects {
   private reverbAmount = 0
+  private _pitchOctaves = 0
+  private _pitchRatio = 1.0  // precomputed 2^_pitchOctaves — never computed in hot loop
   private readonly delayLengths = [2205, 2910, 3780, 4410]
   private readonly feedback = 0.75
   private delayBuffers: Float32Array[]
@@ -16,6 +18,19 @@ export class TrackEffects {
 
   getReverb(): number {
     return this.reverbAmount
+  }
+
+  setPitch(octaves: number): void {
+    this._pitchOctaves = Math.max(-4, Math.min(4, octaves))
+    this._pitchRatio = Math.pow(2, this._pitchOctaves)
+  }
+
+  getPitchOctaves(): number {
+    return this._pitchOctaves
+  }
+
+  getPitchRatio(): number {
+    return this._pitchRatio
   }
 
   process(input: number): number {

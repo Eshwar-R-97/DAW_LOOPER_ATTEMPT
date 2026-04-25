@@ -51,6 +51,46 @@ describe('TrackEffects', () => {
     })
   })
 
+  describe('setPitch / getPitchOctaves / getPitchRatio', () => {
+    it('defaults to 0 octaves and ratio 1', () => {
+      const fx = new TrackEffects()
+      expect(fx.getPitchOctaves()).toBe(0)
+      expect(fx.getPitchRatio()).toBe(1)
+    })
+
+    it('+1 octave → ratio 2', () => {
+      const fx = new TrackEffects()
+      fx.setPitch(1)
+      expect(fx.getPitchOctaves()).toBe(1)
+      expect(fx.getPitchRatio()).toBeCloseTo(2)
+    })
+
+    it('-1 octave → ratio 0.5', () => {
+      const fx = new TrackEffects()
+      fx.setPitch(-1)
+      expect(fx.getPitchOctaves()).toBe(-1)
+      expect(fx.getPitchRatio()).toBeCloseTo(0.5)
+    })
+
+    it('+4 octaves → ratio 16', () => {
+      const fx = new TrackEffects()
+      fx.setPitch(4)
+      expect(fx.getPitchRatio()).toBeCloseTo(16)
+    })
+
+    it('clamps above 4', () => {
+      const fx = new TrackEffects()
+      fx.setPitch(10)
+      expect(fx.getPitchOctaves()).toBe(4)
+    })
+
+    it('clamps below -4', () => {
+      const fx = new TrackEffects()
+      fx.setPitch(-10)
+      expect(fx.getPitchOctaves()).toBe(-4)
+    })
+  })
+
   describe('reset()', () => {
     it('clears delay buffers so process returns input again', () => {
       const fx = new TrackEffects()

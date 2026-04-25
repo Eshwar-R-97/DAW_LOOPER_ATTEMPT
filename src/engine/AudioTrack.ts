@@ -2,6 +2,7 @@ import { TrackState } from '../types'
 import type { TrackSnapshot } from '../types'
 import { clamp, generateWaveformPeaks } from '../utils/audioHelpers'
 import { TrackEffects } from './TrackEffects'
+import { olaShift } from './pitchShift'
 
 const DEFAULT_WAVEFORM_POINTS = 200
 
@@ -17,6 +18,7 @@ export class AudioTrack {
   private _savedVolume: number
   private _waveformData: number[]
   private effects = new TrackEffects()
+  private _processedBuffer: Float32Array
 
   constructor(id: string, index: number, buffer: Float32Array, sampleRate: number) {
     this.id = id
@@ -29,6 +31,7 @@ export class AudioTrack {
     this._isDeleted = false
     this._savedVolume = 1.0
     this._waveformData = AudioTrack.generateWaveformData(buffer, DEFAULT_WAVEFORM_POINTS)
+    this._processedBuffer = buffer
   }
 
   get state(): TrackState {
@@ -63,8 +66,17 @@ export class AudioTrack {
     return this.effects.getReverb()
   }
 
+  get pitchOctaves(): number {
+    return this.effects.getPitchOctaves()
+  }
+
   setReverb(amount: number): void {
     this.effects.setReverb(amount)
+  }
+
+  setPitch(octaves: number): void {
+    this.effects.setPitch(octaves)
+    this._processedBuffer = olaShift(this.buffer, this.effects.getPitchRatio())
   }
 
   setVolume(value: number): void {
@@ -105,8 +117,8 @@ export class AudioTrack {
     if (position < 0) return 0
     if (this._isMuted || this._isDeleted) return 0
 
-    const wrappedPosition = position % this.buffer.length
-    const dry = this.buffer[wrappedPosition] * this.gain
+    const wrappedPosition = position % this._processedBuffer.length
+    const dry = this._processedBuffer[wrappedPosition] * this.gain
     return this.effects.process(dry)
   }
 
@@ -116,8 +128,8 @@ export class AudioTrack {
     if (this._isMuted || this._isDeleted) return output
 
     for (let i = 0; i < length; i++) {
-      const position = (startPosition + i) % this.buffer.length
-      output[i] = this.buffer[position] * this.gain
+      const position = (startPosition + i) % this._processedBuffer.length
+      output[i] = this._processedBuffer[position] * this.gain
     }
 
     return output
@@ -134,6 +146,7 @@ export class AudioTrack {
       isDeleted: this._isDeleted,
       waveformData: this._waveformData,
       reverbAmount: this.effects.getReverb(),
+      pitchOctaves: this.effects.getPitchOctaves(),
     }
   }
 
