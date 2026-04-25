@@ -20,6 +20,9 @@ export function DawView() {
   const stopRecording = useDawStore(s => s.stopRecording)
   const moveClip = useDawStore(s => s.moveClip)
   const deleteClip = useDawStore(s => s.deleteClip)
+  const setClipVolume = useDawStore(s => s.setClipVolume)
+  const setClipReverb = useDawStore(s => s.setClipReverb)
+  const setClipPitch = useDawStore(s => s.setClipPitch)
   const setMasterVolume = useDawStore(s => s.setMasterVolume)
   const dispose = useDawStore(s => s.dispose)
 
@@ -77,6 +80,9 @@ export function DawView() {
         onMoveClip={moveClip}
         onDeleteClip={deleteClip}
         onSeek={seekTo}
+        onSetClipVolume={setClipVolume}
+        onSetClipReverb={setClipReverb}
+        onSetClipPitch={setClipPitch}
       />
 
       <div className="bottom-controls">

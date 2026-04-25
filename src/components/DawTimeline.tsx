@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useCallback } from 'react'
 import type { DawClipSnapshot, DawPlaybackState } from '../types/daw'
 import { DawTrackRow } from './DawTrackRow'
 
@@ -10,6 +10,9 @@ interface DawTimelineProps {
   onMoveClip: (clipId: string, startTime: number) => void
   onDeleteClip: (clipId: string) => void
   onSeek: (seconds: number) => void
+  onSetClipVolume: (clipId: string, volume: number) => void
+  onSetClipReverb: (clipId: string, amount: number) => void
+  onSetClipPitch: (clipId: string, octaves: number) => void
 }
 
 const PIXELS_PER_SECOND = 100
@@ -38,21 +41,57 @@ export function DawTimeline({
   onMoveClip,
   onDeleteClip,
   onSeek,
+  onSetClipVolume,
+  onSetClipReverb,
+  onSetClipPitch,
 }: DawTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const playheadRef = useRef<HTMLDivElement>(null)
+  const isDraggingPlayhead = useRef(false)
+
   const displayLength = Math.max(timelineLength + 2, MIN_TIMELINE_SECONDS)
   const timelineWidth = displayLength * PIXELS_PER_SECOND
   const playheadLeft = currentPosition * PIXELS_PER_SECOND
 
   const ticks = buildRulerTicks(displayLength)
 
-  const handleRulerClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!containerRef.current) return
+  // Shared helper: convert a clientX to a timeline position in seconds
+  const clientXToSeconds = useCallback((clientX: number): number => {
+    if (!containerRef.current) return 0
     const rect = containerRef.current.getBoundingClientRect()
-    const x = e.clientX - rect.left + containerRef.current.scrollLeft - TRACK_LABEL_WIDTH
-    const seconds = Math.max(0, x / PIXELS_PER_SECOND)
-    onSeek(seconds)
+    const x = clientX - rect.left + containerRef.current.scrollLeft - TRACK_LABEL_WIDTH
+    return Math.max(0, x / PIXELS_PER_SECOND)
+  }, [])
+
+  // Ruler click — seek to clicked position (only when not dragging the playhead)
+  const handleRulerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (isDraggingPlayhead.current) return
+    onSeek(clientXToSeconds(e.clientX))
   }
+
+  // Playhead drag — move the playhead directly in the DOM for smooth 60fps,
+  // then commit the final position to the store on mouseup
+  const handlePlayheadMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()  // don't trigger ruler click
+    isDraggingPlayhead.current = true
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!playheadRef.current) return
+      const newLeft = Math.max(0, clientXToSeconds(e.clientX)) * PIXELS_PER_SECOND
+      playheadRef.current.style.left = `${newLeft + TRACK_LABEL_WIDTH}px`
+    }
+
+    const handleMouseUp = (e: MouseEvent) => {
+      isDraggingPlayhead.current = false
+      onSeek(clientXToSeconds(e.clientX))
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }, [clientXToSeconds, onSeek])
 
   return (
     <div className="daw-timeline-wrapper">
@@ -88,6 +127,9 @@ export function DawTimeline({
               containerRef={containerRef}
               onDragEnd={onMoveClip}
               onDelete={onDeleteClip}
+              onSetVolume={(volume) => onSetClipVolume(clip.id, volume)}
+              onSetReverb={(amount) => onSetClipReverb(clip.id, amount)}
+              onSetPitch={(octaves) => onSetClipPitch(clip.id, octaves)}
             />
           ))}
 
@@ -98,10 +140,12 @@ export function DawTimeline({
           )}
         </div>
 
-        {/* Playhead — sits over everything */}
+        {/* Playhead — draggable; also click the ruler to jump */}
         <div
+          ref={playheadRef}
           className="daw-playhead"
           style={{ left: playheadLeft + TRACK_LABEL_WIDTH }}
+          onMouseDown={handlePlayheadMouseDown}
         />
       </div>
     </div>
