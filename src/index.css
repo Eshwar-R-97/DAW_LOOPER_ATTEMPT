@@ -1176,6 +1176,8 @@ body {
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border);
   border-left: 3px solid var(--accent-yellow);
+  position: relative;  /* create stacking context so z-index applies */
+  z-index: 25;         /* sit above the playhead line (z-index: 20) */
 }
 
 .daw-editor-section {
