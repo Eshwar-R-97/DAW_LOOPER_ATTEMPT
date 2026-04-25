@@ -7,20 +7,42 @@ class RecorderProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this._recording = false;
+    this._warmupDone = false;  // skip leading silence from stream startup
     this.port.onmessage = (e) => {
-      if (e.data.command === 'start') this._recording = true;
-      if (e.data.command === 'stop') this._recording = false;
+      if (e.data.command === 'start') {
+        this._recording = true;
+        this._warmupDone = false;  // reset for each new recording
+      }
+      if (e.data.command === 'stop') {
+        this._recording = false;
+        // Send a sentinel so the main thread knows no more samples are coming
+        this.port.postMessage({ type: 'stopped' });
+      }
     };
   }
 
   process(inputs) {
     if (!this._recording) return true;
     const input = inputs[0];
-    if (input && input[0] && input[0].length > 0) {
-      // Copy the data and send to main thread
-      const samples = new Float32Array(input[0]);
-      this.port.postMessage({ samples }, [samples.buffer]);
+    if (!input || !input[0] || input[0].length === 0) return true;
+
+    const samples = input[0];
+
+    // Skip silent warmup frames — the browser buffers ~1s of silence when a
+    // MediaStreamAudioSourceNode first starts delivering samples to the graph.
+    // Only start recording once we see actual audio above the noise floor.
+    if (!this._warmupDone) {
+      for (let i = 0; i < samples.length; i++) {
+        if (Math.abs(samples[i]) > 0.001) {
+          this._warmupDone = true;
+          break;
+        }
+      }
+      if (!this._warmupDone) return true;
     }
+
+    const copy = new Float32Array(samples);
+    this.port.postMessage({ samples: copy }, [copy.buffer]);
     return true;
   }
 }
@@ -101,82 +123,81 @@ export class AudioRecorder {
 
   private startWorkletCapture(onFirstSample?: () => void): void {
     this.workletNode = new AudioWorkletNode(this.audioContext, 'recorder-processor')
-    let messageCount = 0
     let firstSampleFired = false
     this.workletNode.port.onmessage = (e: MessageEvent) => {
-      messageCount++
-      if (messageCount <= 3) {
-        console.log('[AudioRecorder] Worklet message #' + messageCount,
-          '| isRecording:', this._isRecording,
-          '| hasSamples:', !!e.data.samples,
-          '| sampleLength:', e.data.samples?.length)
+      // 'stopped' sentinel: the worklet has finished — do final cleanup
+      if (e.data.type === 'stopped') {
+        this._isRecording = false
+        if (this.workletNode) {
+          this.workletNode.disconnect()
+          this.workletNode = null
+        }
+        return
       }
-      if (!this._isRecording) return
 
-      // Fire onFirstSample callback on first audio chunk
+      // Don't drop samples here based on _isRecording — messages sent before
+      // the worklet processed 'stop' are still valid audio and must be kept.
+      // The worklet's own flag stops it generating new messages; we just drain
+      // whatever is already in the message queue.
+      if (!e.data.samples) return
+
+      // First non-silent sample arriving: fire the sync callback
       if (!firstSampleFired && onFirstSample) {
         onFirstSample()
         firstSampleFired = true
       }
 
-      if (e.data.samples) {
-        this.recordedChunks.push(new Float32Array(e.data.samples))
-      }
+      this.recordedChunks.push(new Float32Array(e.data.samples))
     }
     this.workletNode.port.postMessage({ command: 'start' })
     this.sourceNode!.connect(this.workletNode)
-    console.log('[AudioRecorder] Worklet node connected to source')
   }
 
   private scriptProcessorNode: ScriptProcessorNode | null = null
 
   private startScriptProcessorCapture(onFirstSample?: () => void): void {
     this.scriptProcessorNode = this.audioContext.createScriptProcessor(4096, 1, 1)
-    let processCount = 0
+    let warmupDone = false
     let firstSampleFired = false
     this.scriptProcessorNode.onaudioprocess = (event) => {
-      processCount++
-      if (processCount <= 3) {
-        const inputData = event.inputBuffer.getChannelData(0)
-        const maxVal = Math.max(...Array.from(inputData).map(Math.abs))
-        console.log('[AudioRecorder] ScriptProcessor event #' + processCount,
-          '| isRecording:', this._isRecording,
-          '| samples:', inputData.length,
-          '| maxAmplitude:', maxVal.toFixed(6))
-      }
       if (!this._isRecording) return
 
-      // Fire onFirstSample callback on first audio chunk
+      const inputData = event.inputBuffer.getChannelData(0)
+
+      // Skip leading silence same as the worklet path
+      if (!warmupDone) {
+        for (let i = 0; i < inputData.length; i++) {
+          if (Math.abs(inputData[i]) > 0.001) { warmupDone = true; break }
+        }
+        if (!warmupDone) return
+      }
+
       if (!firstSampleFired && onFirstSample) {
         onFirstSample()
         firstSampleFired = true
       }
 
-      const inputData = event.inputBuffer.getChannelData(0)
       const chunk = new Float32Array(inputData.length)
       chunk.set(inputData)
       this.recordedChunks.push(chunk)
     }
     this.sourceNode!.connect(this.scriptProcessorNode)
-    // ScriptProcessor must be connected to destination to fire
     this.scriptProcessorNode.connect(this.audioContext.destination)
-    console.log('[AudioRecorder] ScriptProcessor connected to source and destination')
   }
 
   stopCapture(): Float32Array {
-    console.log('[AudioRecorder] stopCapture - chunks:', this.recordedChunks.length,
-      '| wasRecording:', this._isRecording,
-      '| hasWorkletNode:', !!this.workletNode,
-      '| hasScriptProcessor:', !!this.scriptProcessorNode)
-    this._isRecording = false
-
     if (this.workletNode) {
+      // Tell the worklet to stop generating samples. It will send a 'stopped'
+      // sentinel message when done, which the onmessage handler uses to do
+      // final disconnect — so we don't disconnect here. Any samples already
+      // sent by the worklet but not yet received will still arrive and be
+      // collected before 'stopped' is processed.
       this.workletNode.port.postMessage({ command: 'stop' })
-      this.workletNode.disconnect()
-      this.workletNode = null
+      // _isRecording is cleared by the 'stopped' sentinel handler
     }
 
     if (this.scriptProcessorNode) {
+      this._isRecording = false
       this.scriptProcessorNode.onaudioprocess = null
       this.scriptProcessorNode.disconnect()
       this.scriptProcessorNode = null
