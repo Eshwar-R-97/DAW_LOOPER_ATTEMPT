@@ -5,6 +5,7 @@ import { TransportBar } from './components/TransportBar'
 import { LoopProgressBar } from './components/LoopProgressBar'
 import { TrackList } from './components/TrackList'
 import { RotaryKnob } from './components/RotaryKnob'
+import { SampleFinderPanel } from './components/SampleFinderPanel'
 
 function App() {
   const looperState = useLooperStore((s) => s.looperState)
@@ -27,6 +28,8 @@ function App() {
   const setLatencyOffset = useLooperStore((s) => s.setLatencyOffset)
   const masterVolume = useLooperStore((s) => s.masterVolume)
   const setMasterVolume = useLooperStore((s) => s.setMasterVolume)
+  const setTrackReverb = useLooperStore((s) => s.setTrackReverb)
+  const loadTrackFromUrl = useLooperStore((s) => s.loadTrackFromUrl)
   const dispose = useLooperStore((s) => s.dispose)
 
   useEffect(() => {
@@ -108,11 +111,14 @@ function App() {
         isPlaying={looperState === LooperState.PLAYING}
       />
 
+      <SampleFinderPanel onLoadSample={loadTrackFromUrl} />
+
       <TrackList
         tracks={tracks}
         onToggleMute={toggleTrackMute}
         onSetVolume={setTrackVolume}
         onDeleteTrack={deleteTrack}
+        onSetTrackReverb={setTrackReverb}
       />
 
       <div className="bottom-controls">

@@ -3,7 +3,7 @@ import type { AudioEngineConfig, EngineEvent, TrackSnapshot, EngineStateSnapshot
 import { AudioRecorder } from './AudioRecorder'
 import { AudioTrack } from './AudioTrack'
 import { AudioMixer } from './AudioMixer'
-import { generateTrackId } from '../utils/audioHelpers'
+import { generateTrackId, fitBufferToLength } from '../utils/audioHelpers'
 
 export class LoopEngine {
   private audioContext: AudioContext | null = null
@@ -88,6 +88,7 @@ export class LoopEngine {
       const output = event.outputBuffer.getChannelData(0)
       this.processAudioOutput(output)
     }
+
     this.outputNode.connect(this.audioContext.destination)
 
     this._state = LooperState.EMPTY
@@ -115,10 +116,15 @@ export class LoopEngine {
     }
     console.log('[LoopEngine] AudioContext state:', this.audioContext?.state)
 
-    // Save playhead position so overdub can be aligned to the loop
-    this.recordStartPosition = this.playheadPosition
+    // Reset recordStartPosition; it will be captured when the first audio sample arrives
+    // This compensates for recording latency (mic input has ~300ms delay)
+    this.recordStartPosition = 0
 
-    this.recorder!.startCapture()
+    // Pass a callback that fires when the first audio sample arrives
+    this.recorder!.startCapture(() => {
+      this.recordStartPosition = this.playheadPosition
+      console.log('[LoopEngine] First audio sample arrived, recordStartPosition =', this.recordStartPosition)
+    })
     this._state = LooperState.RECORDING
     this.emitSnapshot()
   }
@@ -144,10 +150,7 @@ export class LoopEngine {
 
     const isFirstTrack = this.tracks.length === 0
 
-    if (isFirstTrack) {
-      // First track sets the master loop length
-      this.masterLoopLength = buffer.length
-    } else {
+    if (!isFirstTrack) {
       // Overdub: extract the last complete loop cycle from the recording.
       // Recording started at playhead position `recordStartPosition`.
       // Samples 0...(masterLoopLength - recordStartPosition - 1) cover the remainder of that first loop.
@@ -205,28 +208,57 @@ export class LoopEngine {
       buffer = aligned
     }
 
+    return this.addTrackFromBuffer(buffer)
+  }
+
+  addTrackFromBuffer(buffer: Float32Array): TrackSnapshot {
+    const isFirstTrack = this.tracks.length === 0
+    if (isFirstTrack) {
+      this.masterLoopLength = buffer.length
+    } else {
+      buffer = fitBufferToLength(buffer, this.masterLoopLength)
+    }
+
     const trackId = generateTrackId()
-    const trackIndex = this.nextTrackIndex++
-    const track = new AudioTrack(trackId, trackIndex, buffer, this.config.sampleRate)
-
+    const track = new AudioTrack(trackId, this.nextTrackIndex++, buffer, this.config.sampleRate)
     this.tracks.push(track)
-
-    // Recording a new track clears the redo stack
     this.redoStack = []
 
     this._state = LooperState.PLAYING
-    // Ensure all tracks are in PLAYING state
     this.tracks.forEach((t) => {
-      if (t.state !== TrackState.MUTED) {
-        t.play()
-      }
+      if (t.state !== TrackState.MUTED) t.play()
     })
 
     const snapshot = track.toSnapshot()
     this.onEvent({ type: 'trackAdded', track: snapshot })
     this.emitSnapshot()
-
     return snapshot
+  }
+
+  async loadTrackFromUrl(url: string): Promise<TrackSnapshot> {
+    if (!this.audioContext) throw new Error('Engine not initialized')
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`Failed to fetch audio: ${response.status}`)
+    const arrayBuffer = await response.arrayBuffer()
+    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer)
+
+    let float32: Float32Array
+    if (audioBuffer.numberOfChannels === 1) {
+      float32 = audioBuffer.getChannelData(0).slice()
+    } else {
+      float32 = new Float32Array(audioBuffer.length)
+      for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
+        const chData = audioBuffer.getChannelData(ch)
+        for (let i = 0; i < audioBuffer.length; i++) float32[i] += chData[i]
+      }
+      for (let i = 0; i < float32.length; i++) float32[i] /= audioBuffer.numberOfChannels
+    }
+
+    if (audioBuffer.sampleRate !== this.config.sampleRate) {
+      float32 = await this.resampleBuffer(float32, audioBuffer.sampleRate, audioBuffer.length)
+    }
+
+    return this.addTrackFromBuffer(float32)
   }
 
   // --- Playback ---
@@ -265,6 +297,12 @@ export class LoopEngine {
 
   setMasterVolume(volume: number): void {
     this.mixer.setMasterVolume(volume)
+    this.emitSnapshot()
+  }
+
+  setTrackReverb(trackId: string, amount: number): void {
+    const track = this.getTrackById(trackId)
+    track.setReverb(amount)
     this.emitSnapshot()
   }
 
@@ -382,6 +420,19 @@ export class LoopEngine {
   }
 
   // --- Private ---
+
+  private async resampleBuffer(input: Float32Array, fromRate: number, inputLength: number): Promise<Float32Array> {
+    const targetLength = Math.ceil(inputLength * this.config.sampleRate / fromRate)
+    const offlineCtx = new OfflineAudioContext(1, targetLength, this.config.sampleRate)
+    const buf = offlineCtx.createBuffer(1, input.length, fromRate)
+    buf.copyToChannel(new Float32Array(input), 0)
+    const src = offlineCtx.createBufferSource()
+    src.buffer = buf
+    src.connect(offlineCtx.destination)
+    src.start()
+    const rendered = await offlineCtx.startRendering()
+    return rendered.getChannelData(0)
+  }
 
   private getTrackById(trackId: string): AudioTrack {
     const track = this.tracks.find((t) => t.id === trackId)

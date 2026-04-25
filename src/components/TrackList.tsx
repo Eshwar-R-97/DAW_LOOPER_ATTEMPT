@@ -7,9 +7,10 @@ interface TrackListProps {
   onToggleMute: (trackId: string) => void
   onSetVolume: (trackId: string, volume: number) => void
   onDeleteTrack: (trackId: string) => void
+  onSetTrackReverb: (trackId: string, amount: number) => void
 }
 
-export function TrackList({ tracks, onToggleMute, onSetVolume, onDeleteTrack }: TrackListProps) {
+export function TrackList({ tracks, onToggleMute, onSetVolume, onDeleteTrack, onSetTrackReverb }: TrackListProps) {
   const visibleTracks = tracks.filter((t) => !t.isDeleted)
 
   if (visibleTracks.length === 0) {
@@ -27,6 +28,7 @@ export function TrackList({ tracks, onToggleMute, onSetVolume, onDeleteTrack }: 
           onToggleMute={() => onToggleMute(track.id)}
           onSetVolume={(volume) => onSetVolume(track.id, volume)}
           onDelete={() => onDeleteTrack(track.id)}
+          onSetReverb={(amount) => onSetTrackReverb(track.id, amount)}
         />
       ))}
     </div>

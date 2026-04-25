@@ -1,6 +1,7 @@
 import { TrackState } from '../types'
 import type { TrackSnapshot } from '../types'
 import { clamp, generateWaveformPeaks } from '../utils/audioHelpers'
+import { TrackEffects } from './TrackEffects'
 
 const DEFAULT_WAVEFORM_POINTS = 200
 
@@ -15,6 +16,7 @@ export class AudioTrack {
   private _isDeleted: boolean
   private _savedVolume: number
   private _waveformData: number[]
+  private effects = new TrackEffects()
 
   constructor(id: string, index: number, buffer: Float32Array, sampleRate: number) {
     this.id = id
@@ -57,6 +59,14 @@ export class AudioTrack {
     return this.buffer.length
   }
 
+  get reverbAmount(): number {
+    return this.effects.getReverb()
+  }
+
+  setReverb(amount: number): void {
+    this.effects.setReverb(amount)
+  }
+
   setVolume(value: number): void {
     this._volume = clamp(value, 0.0, 2.0)
   }
@@ -96,7 +106,8 @@ export class AudioTrack {
     if (this._isMuted || this._isDeleted) return 0
 
     const wrappedPosition = position % this.buffer.length
-    return this.buffer[wrappedPosition] * this.gain
+    const dry = this.buffer[wrappedPosition] * this.gain
+    return this.effects.process(dry)
   }
 
   getSampleBatch(startPosition: number, length: number): Float32Array {
@@ -122,6 +133,7 @@ export class AudioTrack {
       isMuted: this._isMuted,
       isDeleted: this._isDeleted,
       waveformData: this._waveformData,
+      reverbAmount: this.effects.getReverb(),
     }
   }
 

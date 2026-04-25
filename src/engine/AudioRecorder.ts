@@ -71,7 +71,7 @@ export class AudioRecorder {
     }
   }
 
-  startCapture(): void {
+  startCapture(onFirstSample?: () => void): void {
     if (!this.mediaStream) {
       throw new Error('Microphone access not granted. Call requestMicAccess() first.')
     }
@@ -92,16 +92,17 @@ export class AudioRecorder {
 
     if (this.workletReady) {
       console.log('[AudioRecorder] Using AudioWorklet path')
-      this.startWorkletCapture()
+      this.startWorkletCapture(onFirstSample)
     } else {
       console.log('[AudioRecorder] Using ScriptProcessor fallback')
-      this.startScriptProcessorCapture()
+      this.startScriptProcessorCapture(onFirstSample)
     }
   }
 
-  private startWorkletCapture(): void {
+  private startWorkletCapture(onFirstSample?: () => void): void {
     this.workletNode = new AudioWorkletNode(this.audioContext, 'recorder-processor')
     let messageCount = 0
+    let firstSampleFired = false
     this.workletNode.port.onmessage = (e: MessageEvent) => {
       messageCount++
       if (messageCount <= 3) {
@@ -111,6 +112,13 @@ export class AudioRecorder {
           '| sampleLength:', e.data.samples?.length)
       }
       if (!this._isRecording) return
+
+      // Fire onFirstSample callback on first audio chunk
+      if (!firstSampleFired && onFirstSample) {
+        onFirstSample()
+        firstSampleFired = true
+      }
+
       if (e.data.samples) {
         this.recordedChunks.push(new Float32Array(e.data.samples))
       }
@@ -122,9 +130,10 @@ export class AudioRecorder {
 
   private scriptProcessorNode: ScriptProcessorNode | null = null
 
-  private startScriptProcessorCapture(): void {
+  private startScriptProcessorCapture(onFirstSample?: () => void): void {
     this.scriptProcessorNode = this.audioContext.createScriptProcessor(4096, 1, 1)
     let processCount = 0
+    let firstSampleFired = false
     this.scriptProcessorNode.onaudioprocess = (event) => {
       processCount++
       if (processCount <= 3) {
@@ -136,6 +145,13 @@ export class AudioRecorder {
           '| maxAmplitude:', maxVal.toFixed(6))
       }
       if (!this._isRecording) return
+
+      // Fire onFirstSample callback on first audio chunk
+      if (!firstSampleFired && onFirstSample) {
+        onFirstSample()
+        firstSampleFired = true
+      }
+
       const inputData = event.inputBuffer.getChannelData(0)
       const chunk = new Float32Array(inputData.length)
       chunk.set(inputData)

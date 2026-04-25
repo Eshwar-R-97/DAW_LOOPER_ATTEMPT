@@ -24,6 +24,7 @@ export interface TrackSnapshot {
   isMuted: boolean
   isDeleted: boolean
   waveformData: number[]
+  reverbAmount: number
 }
 
 /** Configuration for the audio engine */

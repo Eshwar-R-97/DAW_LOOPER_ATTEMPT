@@ -572,4 +572,120 @@ describe('LoopEngine', () => {
       expect(recorder.dispose).toHaveBeenCalled()
     })
   })
+
+  describe('addTrackFromBuffer()', () => {
+    it('creates a track from a Float32Array', async () => {
+      const engine = await createReadyEngine()
+      engine.addTrackFromBuffer(makeBuffer(44100))
+      expect(engine.trackCount).toBe(1)
+    })
+
+    it('sets master loop length from first track buffer', async () => {
+      const engine = await createReadyEngine()
+      engine.addTrackFromBuffer(makeBuffer(22050))
+      expect(engine.masterDuration).toBeCloseTo(0.5, 2)
+    })
+
+    it('transitions to PLAYING state', async () => {
+      const engine = await createReadyEngine()
+      engine.addTrackFromBuffer(makeBuffer(44100))
+      expect(engine.state).toBe(LooperState.PLAYING)
+    })
+
+    it('trims a second buffer that is too long', async () => {
+      const engine = await createReadyEngine()
+      engine.addTrackFromBuffer(makeBuffer(44100))    // master = 1s
+      engine.addTrackFromBuffer(makeBuffer(88200))    // 2s input
+      expect(engine.allTracks[1].duration).toBeCloseTo(1.0, 2)
+    })
+
+    it('pads a second buffer that is too short', async () => {
+      const engine = await createReadyEngine()
+      engine.addTrackFromBuffer(makeBuffer(44100))    // master = 1s
+      engine.addTrackFromBuffer(makeBuffer(22050))    // 0.5s input
+      expect(engine.allTracks[1].duration).toBeCloseTo(1.0, 2)
+    })
+
+    it('emits trackAdded event', async () => {
+      const { events, handler } = createEventCollector()
+      const engine = new LoopEngine(defaultConfig, handler)
+      await engine.initialize()
+      events.length = 0
+      engine.addTrackFromBuffer(makeBuffer(44100))
+      const addEvents = events.filter((e) => e.type === 'trackAdded')
+      expect(addEvents).toHaveLength(1)
+    })
+
+    it('clears redo stack', async () => {
+      const engine = await createReadyEngine(undefined, makeBuffer(44100))
+      await engine.startRecording()
+      engine.stopRecording()
+      engine.undoLastTrack()
+      engine.addTrackFromBuffer(makeBuffer(44100))
+      // Redo should have nothing — redo stack was cleared
+      expect(engine.redoTrack()).toBeNull()
+    })
+  })
+
+  describe('loadTrackFromUrl()', () => {
+    beforeEach(() => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(44100 * 4)),
+      }))
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('fetches the given URL', async () => {
+      const engine = await createReadyEngine()
+      await engine.loadTrackFromUrl('https://proxy.test/audio.mp3')
+      expect(global.fetch).toHaveBeenCalledWith('https://proxy.test/audio.mp3')
+    })
+
+    it('creates a track from the decoded buffer', async () => {
+      const engine = await createReadyEngine()
+      await engine.loadTrackFromUrl('https://proxy.test/audio.mp3')
+      expect(engine.trackCount).toBe(1)
+    })
+
+    it('sets master loop length from loaded audio when first track', async () => {
+      const engine = await createReadyEngine()
+      await engine.loadTrackFromUrl('https://proxy.test/audio.mp3')
+      expect(engine.masterDuration).toBeGreaterThan(0)
+    })
+
+    it('emits trackAdded event', async () => {
+      const { events, handler } = createEventCollector()
+      const engine = new LoopEngine(defaultConfig, handler)
+      await engine.initialize()
+      events.length = 0
+      await engine.loadTrackFromUrl('https://proxy.test/audio.mp3')
+      const addEvents = events.filter((e) => e.type === 'trackAdded')
+      expect(addEvents).toHaveLength(1)
+    })
+
+    it('throws if engine not initialized', async () => {
+      const { handler } = createEventCollector()
+      const engine = new LoopEngine(defaultConfig, handler)
+      await expect(engine.loadTrackFromUrl('https://proxy.test/audio.mp3')).rejects.toThrow('not initialized')
+    })
+
+    it('throws if fetch returns non-ok response', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }))
+      const engine = await createReadyEngine()
+      await expect(engine.loadTrackFromUrl('https://proxy.test/audio.mp3')).rejects.toThrow('Failed to fetch audio')
+    })
+
+    it('fits loaded buffer to master loop length when tracks already exist', async () => {
+      const engine = await createReadyEngine(undefined, makeBuffer(44100))
+      await engine.startRecording()
+      engine.stopRecording()
+      await engine.loadTrackFromUrl('https://proxy.test/audio.mp3')
+      expect(engine.trackCount).toBe(2)
+      expect(engine.allTracks[1].duration).toBeCloseTo(engine.allTracks[0].duration, 1)
+    })
+  })
 })

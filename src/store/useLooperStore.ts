@@ -26,11 +26,15 @@ interface LooperStore {
   toggleTrackMute: (trackId: string) => void
   setTrackVolume: (trackId: string, volume: number) => void
   setMasterVolume: (volume: number) => void
+  setTrackReverb: (trackId: string, amount: number) => void
   deleteTrack: (trackId: string) => void
   undoLastTrack: () => void
   redoTrack: () => void
   latencyOffsetMs: number
   setLatencyOffset: (ms: number) => void
+  loadTrackFromUrl: (url: string) => Promise<void>
+  isLoadingExternalTrack: boolean
+  externalTrackError: string | null
   dispose: () => void
 }
 
@@ -119,6 +123,10 @@ export const useLooperStore = create<LooperStore>((set, get) => {
       set({ masterVolume: volume })
     },
 
+    setTrackReverb: (trackId: string, amount: number) => {
+      get().engine?.setTrackReverb(trackId, amount)
+    },
+
     deleteTrack: (trackId: string) => {
       get().engine?.deleteTrack(trackId)
     },
@@ -130,6 +138,23 @@ export const useLooperStore = create<LooperStore>((set, get) => {
     redoTrack: () => {
       get().engine?.redoTrack()
     },
+
+    loadTrackFromUrl: async (url: string) => {
+      const engine = get().engine
+      if (!engine) return
+      set({ isLoadingExternalTrack: true, externalTrackError: null })
+      try {
+        const proxyUrl = `/api/preview-proxy?url=${encodeURIComponent(url)}`
+        await engine.loadTrackFromUrl(proxyUrl)
+      } catch (err) {
+        set({ externalTrackError: err instanceof Error ? err.message : 'Failed to load sample' })
+      } finally {
+        set({ isLoadingExternalTrack: false })
+      }
+    },
+
+    isLoadingExternalTrack: false,
+    externalTrackError: null,
 
     latencyOffsetMs: 0,
 
@@ -156,6 +181,8 @@ export const useLooperStore = create<LooperStore>((set, get) => {
         canUndo: false,
         canRedo: false,
         engine: null,
+        isLoadingExternalTrack: false,
+        externalTrackError: null,
       })
     },
   }

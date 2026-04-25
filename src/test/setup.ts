@@ -40,6 +40,34 @@ class MockAudioContext {
     }
   }
 
+  createBuffer(_channels: number, length: number, sampleRate: number): AudioBuffer {
+    return {
+      numberOfChannels: 1,
+      length,
+      sampleRate,
+      getChannelData: vi.fn(() => new Float32Array(length)),
+      copyToChannel: vi.fn(),
+    } as unknown as AudioBuffer
+  }
+
+  createConvolver() {
+    return {
+      buffer: null,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    }
+  }
+
+  decodeAudioData(_arrayBuffer: ArrayBuffer): Promise<AudioBuffer> {
+    return Promise.resolve({
+      numberOfChannels: 1,
+      length: 44100,
+      sampleRate: 44100,
+      getChannelData: vi.fn(() => new Float32Array(44100).fill(0.1)),
+      copyToChannel: vi.fn(),
+    } as unknown as AudioBuffer)
+  }
+
   close() {
     this.state = 'closed' as AudioContextState
     return Promise.resolve()
@@ -48,6 +76,42 @@ class MockAudioContext {
   resume() {
     this.state = 'running' as AudioContextState
     return Promise.resolve()
+  }
+}
+
+class MockOfflineAudioContext {
+  constructor(
+    public numberOfChannels: number,
+    public length: number,
+    public sampleRate: number
+  ) {}
+
+  createBuffer(_ch: number, len: number, rate: number): AudioBuffer {
+    return {
+      numberOfChannels: 1,
+      length: len,
+      sampleRate: rate,
+      getChannelData: vi.fn(() => new Float32Array(len)),
+      copyToChannel: vi.fn(),
+    } as unknown as AudioBuffer
+  }
+
+  createBufferSource() {
+    return {
+      buffer: null as AudioBuffer | null,
+      connect: vi.fn(),
+      start: vi.fn(),
+    }
+  }
+
+  startRendering(): Promise<AudioBuffer> {
+    return Promise.resolve({
+      numberOfChannels: 1,
+      length: this.length,
+      sampleRate: this.sampleRate,
+      getChannelData: vi.fn(() => new Float32Array(this.length).fill(0.1)),
+      copyToChannel: vi.fn(),
+    } as unknown as AudioBuffer)
   }
 }
 
@@ -64,6 +128,12 @@ Object.defineProperty(globalThis, 'webkitAudioContext', {
 
 // Mock navigator.mediaDevices.getUserMedia
 // Only override mediaDevices, not the entire navigator (React DOM needs navigator.userAgent)
+Object.defineProperty(globalThis, 'OfflineAudioContext', {
+  value: MockOfflineAudioContext,
+  writable: true,
+  configurable: true,
+})
+
 if (!globalThis.navigator.mediaDevices) {
   Object.defineProperty(globalThis.navigator, 'mediaDevices', {
     value: {},
