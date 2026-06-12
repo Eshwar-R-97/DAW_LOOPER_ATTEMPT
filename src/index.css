@@ -390,6 +390,48 @@ body {
   padding: 8px 16px;
 }
 
+/* === Input Level Meter === */
+.input-level-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.input-level-label {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  min-width: 42px;
+}
+
+.input-level-track {
+  flex: 1;
+  max-width: 280px;
+  height: 8px;
+  background: #2a2a2a;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.input-level-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-green), var(--accent-yellow));
+  border-radius: 4px;
+  transition: width 0.05s linear;
+}
+
+.input-level-fill--hot {
+  background: var(--accent-red);
+}
+
+.input-level-warning {
+  color: var(--accent-red);
+  font-size: 0.65rem;
+  white-space: nowrap;
+}
+
 /* === Latency Adjust === */
 .latency-adjust {
   display: flex;
