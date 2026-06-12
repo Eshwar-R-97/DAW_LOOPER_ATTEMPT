@@ -1,0 +1,19 @@
+{
+  "type": "workspace_readwrite",
+  "additionalReadonlyPaths": [
+    "/Users/sekar/.cursor/skills",
+    "/Users/sekar/Desktop/ECC",
+    "/Users/sekar/.cursor/projects/Users-sekar-Desktop-DAWLOOPER"
+  ],
+  "networkPolicy": {
+    "default": "deny",
+    "allow": [
+      "registry.npmjs.org",
+      "registry.yarnpkg.com",
+      "github.com",
+      "*.githubusercontent.com",
+      "api.github.com"
+    ]
+  },
+  "enableSharedBuildCache": true
+}

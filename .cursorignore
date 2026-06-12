@@ -1,0 +1,16 @@
+# Secrets — never load into agent context
+.env
+.env.*
+**/*.pem
+**/*.key
+**/credentials*
+**/*secret*
+
+# Dependencies and build output (large / noisy)
+node_modules/
+dist/
+
+# Test and log noise
+coverage/
+*.log
+npm-debug.log*
