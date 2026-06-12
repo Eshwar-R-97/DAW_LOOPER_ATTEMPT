@@ -8,17 +8,25 @@ vi.mock('./AudioRecorder', () => {
     isRecording = false
     hasStream = false
     private _buffer: Float32Array = new Float32Array()
+    private _onFirstSample?: () => void
+    private _onSamples?: (samples: Float32Array) => void
+    private _firstSampleFired = false
 
     requestMicAccess = vi.fn(async () => {
       this.hasStream = true
     })
 
-    startCapture = vi.fn(() => {
+    startCapture = vi.fn((onFirstSample?: () => void, onSamples?: (samples: Float32Array) => void) => {
       this.isRecording = true
+      this._onFirstSample = onFirstSample
+      this._onSamples = onSamples
+      this._firstSampleFired = false
     })
 
     stopCapture = vi.fn(() => {
       this.isRecording = false
+      this._onFirstSample = undefined
+      this._onSamples = undefined
       return this._buffer
     })
 
@@ -28,6 +36,15 @@ vi.mock('./AudioRecorder', () => {
     // Test helper: set what buffer stopCapture() returns
     _setBuffer(b: Float32Array) {
       this._buffer = b
+    }
+
+    // Test helper: simulate mic samples arriving during capture
+    _simulateSamples(samples: Float32Array) {
+      if (!this._firstSampleFired && this._onFirstSample) {
+        this._onFirstSample()
+        this._firstSampleFired = true
+      }
+      this._onSamples?.(samples)
     }
   }
 
@@ -105,6 +122,11 @@ describe('LoopEngine', () => {
       await engine.initialize()
       const stateEvents = events.filter((e) => e.type === 'stateChange')
       expect(stateEvents.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('measures auto latency compensation on initialize', async () => {
+      const engine = await createReadyEngine()
+      expect(engine.autoLatencyOffsetMs).toBeGreaterThanOrEqual(0)
     })
   })
 
@@ -275,6 +297,126 @@ describe('LoopEngine', () => {
       engine.allTracks.forEach((track) => {
         expect(track.state).toBe(TrackState.PLAYING)
       })
+    })
+
+    it('overdub keeps the last loop pass via real-time overwriting buffer', async () => {
+      const loopLen = 100
+      const engine = await createReadyEngine(undefined, makeBuffer(loopLen))
+      engine.startRecording()
+      engine.stopRecording()
+
+      const recorder = (engine as unknown as {
+        recorder: {
+          _setBuffer: (b: Float32Array) => void
+          _simulateSamples: (s: Float32Array) => void
+        }
+      }).recorder
+      recorder._setBuffer(makeBuffer(loopLen * 3)) // ignored for overdub
+
+      // Set playhead to 0 for deterministic writes; disable auto latency in unit tests
+      ;(engine as unknown as { playheadPosition: number }).playheadPosition = 0
+      ;(engine as unknown as { _autoLatencyOffsetMs: number })._autoLatencyOffsetMs = 0
+
+      engine.startRecording()
+
+      // First loop pass — distinct marker value
+      const pass1 = new Float32Array(10)
+      pass1.fill(0.1)
+      recorder._simulateSamples(pass1)
+
+      // Second loop pass — overwrites the same positions
+      ;(engine as unknown as { playheadPosition: number }).playheadPosition = 0
+      const pass2 = new Float32Array(10)
+      pass2.fill(0.9)
+      recorder._simulateSamples(pass2)
+
+      engine.stopRecording()
+
+      const track2 = (engine as unknown as {
+        tracks: Array<{ getSample: (pos: number) => number }>
+      }).tracks[1]
+      const vol = engine.allTracks[1].volume
+
+      // getSample applies volume²; buffer should still hold the last pass (0.9), not pass1 (0.1)
+      expect(track2.getSample(0)).toBeCloseTo(0.9 * vol * vol)
+      expect(track2.getSample(9)).toBeCloseTo(0.9 * vol * vol)
+      expect(track2.getSample(0)).not.toBeCloseTo(0.1 * vol * vol)
+    })
+
+    it('auto-matches overdub volume to the heard backing mix', async () => {
+      const loopLen = 44100
+      const engine = await createReadyEngine(undefined, makeBuffer(loopLen, 0.8))
+      engine.startRecording()
+      engine.stopRecording()
+
+      engine.setTrackVolume(engine.allTracks[0].id, 0.5)
+
+      const recorder = (engine as unknown as {
+        recorder: { _simulateSamples: (s: Float32Array) => void }
+      }).recorder
+
+      ;(engine as unknown as { playheadPosition: number }).playheadPosition = 0
+      ;(engine as unknown as { _autoLatencyOffsetMs: number })._autoLatencyOffsetMs = 0
+
+      engine.startRecording()
+      const loud = new Float32Array(100)
+      loud.fill(0.8)
+      recorder._simulateSamples(loud)
+      engine.stopRecording()
+
+      // Backing plays at 0.8 * 0.5² = 0.2; raw overdub at 0.8 → volume ≈ sqrt(0.2/0.8) = 0.5
+      expect(engine.allTracks[1].volume).toBeCloseTo(0.5, 1)
+    })
+
+    it('applies latency compensation while writing overdub samples', async () => {
+      const loopLen = 100
+      const engine = await createReadyEngine(undefined, makeBuffer(loopLen))
+      engine.startRecording()
+      engine.stopRecording()
+
+      ;(engine as unknown as { _autoLatencyOffsetMs: number })._autoLatencyOffsetMs = 0
+      // ~10 samples earlier at 44100 Hz
+      engine.setLatencyOffset((10 * 1000) / 44100)
+
+      const recorder = (engine as unknown as {
+        recorder: { _simulateSamples: (s: Float32Array) => void }
+      }).recorder
+
+      ;(engine as unknown as { playheadPosition: number }).playheadPosition = 50
+      engine.startRecording()
+      recorder._simulateSamples(new Float32Array([0.8]))
+      engine.stopRecording()
+
+      const track2 = (engine as unknown as {
+        tracks: Array<{ getSample: (pos: number) => number }>
+      }).tracks[1]
+      const vol = engine.allTracks[1].volume
+
+      expect(track2.getSample(40)).toBeCloseTo(0.8 * vol * vol)
+      expect(track2.getSample(50)).toBeCloseTo(0)
+    })
+
+    it('overdub ignores long stopCapture buffer and uses loop-length overdub buffer', async () => {
+      const engine = await engineWithOneTrack()
+      const recorder = (engine as unknown as {
+        recorder: { _setBuffer: (b: Float32Array) => void; _simulateSamples: (s: Float32Array) => void }
+      }).recorder
+      recorder._setBuffer(makeBuffer(88200))
+
+      ;(engine as unknown as { playheadPosition: number }).playheadPosition = 0
+      ;(engine as unknown as { _autoLatencyOffsetMs: number })._autoLatencyOffsetMs = 0
+      engine.startRecording()
+      const chunk = new Float32Array(100)
+      chunk.fill(0.5)
+      recorder._simulateSamples(chunk)
+      engine.stopRecording()
+
+      expect(engine.allTracks[1].duration).toBeCloseTo(1.0)
+      const track2 = (engine as unknown as {
+        tracks: Array<{ sampleCount: number; getSample: (pos: number) => number }>
+      }).tracks[1]
+      expect(track2.sampleCount).toBe(44100)
+      expect(track2.getSample(0)).toBeCloseTo(0.5)
     })
   })
 

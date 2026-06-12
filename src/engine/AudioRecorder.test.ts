@@ -1,4 +1,5 @@
 import { AudioRecorder } from './AudioRecorder'
+import { MIC_GET_USER_MEDIA_OPTIONS } from './micConstraints'
 
 // Build more detailed mocks for AudioRecorder tests
 function createMockAudioContext() {
@@ -17,8 +18,15 @@ function createMockAudioContext() {
   const analyserNode = {
     fftSize: 2048,
     frequencyBinCount: 1024,
+    smoothingTimeConstant: 0.3,
     getByteTimeDomainData: vi.fn(),
     getFloatTimeDomainData: vi.fn(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  }
+
+  const silentGain = {
+    gain: { value: 0 },
     connect: vi.fn(),
     disconnect: vi.fn(),
   }
@@ -30,6 +38,7 @@ function createMockAudioContext() {
     createScriptProcessor: vi.fn().mockReturnValue(scriptProcessorNode),
     createMediaStreamSource: vi.fn().mockReturnValue(sourceNode),
     createAnalyser: vi.fn().mockReturnValue(analyserNode),
+    createGain: vi.fn().mockReturnValue(silentGain),
     close: vi.fn().mockResolvedValue(undefined),
     resume: vi.fn().mockResolvedValue(undefined),
     // AudioWorklet mock — reject so it falls back to ScriptProcessor
@@ -93,11 +102,11 @@ describe('AudioRecorder', () => {
   })
 
   describe('requestMicAccess()', () => {
-    it('calls navigator.mediaDevices.getUserMedia with audio: true', async () => {
+    it('requests raw mic audio without browser DSP', async () => {
       const { ctx } = createMockAudioContext()
       const recorder = new AudioRecorder(ctx as unknown as AudioContext)
       await recorder.requestMicAccess()
-      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({ audio: true })
+      expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith(MIC_GET_USER_MEDIA_OPTIONS)
     })
 
     it('stores the returned MediaStream', async () => {
@@ -212,25 +221,42 @@ describe('AudioRecorder', () => {
       expect(second).toEqual(new Float32Array([0.7]))
     })
 
-    it('disconnects audio nodes after stopping', async () => {
+    it('disconnects capture nodes but keeps mic graph after stopping', async () => {
       const { ctx, sourceNode, scriptProcessorNode } = createMockAudioContext()
       const recorder = new AudioRecorder(ctx as unknown as AudioContext)
       await recorder.requestMicAccess()
       recorder.startCapture()
       recorder.stopCapture()
-      expect(sourceNode.disconnect).toHaveBeenCalled()
       expect(scriptProcessorNode.disconnect).toHaveBeenCalled()
+      expect(sourceNode.disconnect).not.toHaveBeenCalled()
     })
   })
 
   describe('getAnalyserNode()', () => {
-    it('returns the analyser node', async () => {
+    it('returns the analyser node after mic access', async () => {
       const { ctx, analyserNode } = createMockAudioContext()
       const recorder = new AudioRecorder(ctx as unknown as AudioContext)
       await recorder.requestMicAccess()
-      recorder.startCapture()
-      const analyser = recorder.getAnalyserNode()
-      expect(analyser).toBe(analyserNode)
+      expect(recorder.getAnalyserNode()).toBe(analyserNode)
+    })
+  })
+
+  describe('getInputPeakLevel()', () => {
+    it('returns 0 before mic access', () => {
+      const { ctx } = createMockAudioContext()
+      const recorder = new AudioRecorder(ctx as unknown as AudioContext)
+      expect(recorder.getInputPeakLevel()).toBe(0)
+    })
+
+    it('returns peak amplitude from analyser data', async () => {
+      const { ctx, analyserNode } = createMockAudioContext()
+      analyserNode.getFloatTimeDomainData = vi.fn((buf: Float32Array) => {
+        buf[0] = 0.8
+        buf[1] = -0.3
+      })
+      const recorder = new AudioRecorder(ctx as unknown as AudioContext)
+      await recorder.requestMicAccess()
+      expect(recorder.getInputPeakLevel()).toBeCloseTo(0.8)
     })
   })
 

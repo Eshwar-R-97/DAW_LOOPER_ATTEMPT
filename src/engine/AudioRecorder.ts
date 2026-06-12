@@ -1,4 +1,5 @@
 import { concatFloat32Arrays } from '../utils/audioHelpers'
+import { MIC_GET_USER_MEDIA_OPTIONS } from './micConstraints'
 
 // Inline AudioWorklet processor code as a blob URL
 // This runs on the audio thread and sends samples back to the main thread
@@ -56,9 +57,11 @@ export class AudioRecorder {
   private sourceNode: MediaStreamAudioSourceNode | null = null
   private workletNode: AudioWorkletNode | null = null
   private analyserNode: AnalyserNode | null = null
+  private silentOutput: GainNode | null = null
   private recordedChunks: Float32Array[] = []
   private _isRecording = false
   private workletReady = false
+  private peakBuffer: Float32Array | null = null
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext
@@ -77,7 +80,7 @@ export class AudioRecorder {
   }
 
   async requestMicAccess(): Promise<void> {
-    this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    this.mediaStream = await navigator.mediaDevices.getUserMedia(MIC_GET_USER_MEDIA_OPTIONS)
 
     // Register the AudioWorklet processor
     try {
@@ -91,14 +94,17 @@ export class AudioRecorder {
       console.warn('[AudioRecorder] AudioWorklet not available, using ScriptProcessor fallback')
       this.workletReady = false
     }
+
+    this.setupMicGraph()
   }
 
-  startCapture(onFirstSample?: () => void): void {
+  startCapture(onFirstSample?: () => void, onSamples?: (samples: Float32Array) => void): void {
     if (!this.mediaStream) {
       throw new Error('Microphone access not granted. Call requestMicAccess() first.')
     }
 
-    // Verify the media stream is still active
+    this.setupMicGraph()
+
     const audioTracks = this.mediaStream.getAudioTracks()
     console.log('[AudioRecorder] startCapture - Stream tracks:', audioTracks.length,
       '| Track states:', audioTracks.map(t => t.readyState),
@@ -108,24 +114,39 @@ export class AudioRecorder {
     this.recordedChunks = []
     this._isRecording = true
 
-    this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream)
-    this.analyserNode = this.audioContext.createAnalyser() as AnalyserNode
-    this.sourceNode.connect(this.analyserNode)
-
     if (this.workletReady) {
       console.log('[AudioRecorder] Using AudioWorklet path')
-      this.startWorkletCapture(onFirstSample)
+      this.startWorkletCapture(onFirstSample, onSamples)
     } else {
       console.log('[AudioRecorder] Using ScriptProcessor fallback')
-      this.startScriptProcessorCapture(onFirstSample)
+      this.startScriptProcessorCapture(onFirstSample, onSamples)
     }
   }
 
-  private startWorkletCapture(onFirstSample?: () => void): void {
+  private setupMicGraph(): void {
+    if (!this.mediaStream || this.sourceNode) return
+
+    this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream)
+    this.analyserNode = this.audioContext.createAnalyser()
+    this.analyserNode.fftSize = 2048
+    this.analyserNode.smoothingTimeConstant = 0.3
+    this.sourceNode.connect(this.analyserNode)
+  }
+
+  /** Zero-gain output so capture nodes run without audible mic monitoring / feedback. */
+  private getSilentOutput(): GainNode {
+    if (!this.silentOutput) {
+      this.silentOutput = this.audioContext.createGain()
+      this.silentOutput.gain.value = 0
+      this.silentOutput.connect(this.audioContext.destination)
+    }
+    return this.silentOutput
+  }
+
+  private startWorkletCapture(onFirstSample?: () => void, onSamples?: (samples: Float32Array) => void): void {
     this.workletNode = new AudioWorkletNode(this.audioContext, 'recorder-processor')
     let firstSampleFired = false
     this.workletNode.port.onmessage = (e: MessageEvent) => {
-      // 'stopped' sentinel: the worklet has finished — do final cleanup
       if (e.data.type === 'stopped') {
         this._isRecording = false
         if (this.workletNode) {
@@ -135,27 +156,25 @@ export class AudioRecorder {
         return
       }
 
-      // Don't drop samples here based on _isRecording — messages sent before
-      // the worklet processed 'stop' are still valid audio and must be kept.
-      // The worklet's own flag stops it generating new messages; we just drain
-      // whatever is already in the message queue.
       if (!e.data.samples) return
 
-      // First non-silent sample arriving: fire the sync callback
       if (!firstSampleFired && onFirstSample) {
         onFirstSample()
         firstSampleFired = true
       }
 
-      this.recordedChunks.push(new Float32Array(e.data.samples))
+      const samples = new Float32Array(e.data.samples)
+      this.recordedChunks.push(samples)
+      onSamples?.(samples)
     }
     this.workletNode.port.postMessage({ command: 'start' })
     this.sourceNode!.connect(this.workletNode)
+    this.workletNode.connect(this.getSilentOutput())
   }
 
   private scriptProcessorNode: ScriptProcessorNode | null = null
 
-  private startScriptProcessorCapture(onFirstSample?: () => void): void {
+  private startScriptProcessorCapture(onFirstSample?: () => void, onSamples?: (samples: Float32Array) => void): void {
     this.scriptProcessorNode = this.audioContext.createScriptProcessor(4096, 1, 1)
     let warmupDone = false
     let firstSampleFired = false
@@ -164,7 +183,6 @@ export class AudioRecorder {
 
       const inputData = event.inputBuffer.getChannelData(0)
 
-      // Skip leading silence same as the worklet path
       if (!warmupDone) {
         for (let i = 0; i < inputData.length; i++) {
           if (Math.abs(inputData[i]) > 0.001) { warmupDone = true; break }
@@ -180,20 +198,15 @@ export class AudioRecorder {
       const chunk = new Float32Array(inputData.length)
       chunk.set(inputData)
       this.recordedChunks.push(chunk)
+      onSamples?.(chunk)
     }
     this.sourceNode!.connect(this.scriptProcessorNode)
-    this.scriptProcessorNode.connect(this.audioContext.destination)
+    this.scriptProcessorNode.connect(this.getSilentOutput())
   }
 
   stopCapture(): Float32Array {
     if (this.workletNode) {
-      // Tell the worklet to stop generating samples. It will send a 'stopped'
-      // sentinel message when done, which the onmessage handler uses to do
-      // final disconnect — so we don't disconnect here. Any samples already
-      // sent by the worklet but not yet received will still arrive and be
-      // collected before 'stopped' is processed.
       this.workletNode.port.postMessage({ command: 'stop' })
-      // _isRecording is cleared by the 'stopped' sentinel handler
     }
 
     if (this.scriptProcessorNode) {
@@ -201,11 +214,6 @@ export class AudioRecorder {
       this.scriptProcessorNode.onaudioprocess = null
       this.scriptProcessorNode.disconnect()
       this.scriptProcessorNode = null
-    }
-
-    if (this.sourceNode) {
-      this.sourceNode.disconnect()
-      this.sourceNode = null
     }
 
     const result = concatFloat32Arrays(this.recordedChunks)
@@ -217,9 +225,46 @@ export class AudioRecorder {
     return this.analyserNode
   }
 
+  /** Peak input level from the mic (0–1). Available after requestMicAccess(). */
+  getInputPeakLevel(): number {
+    if (!this.analyserNode) return 0
+
+    if (!this.peakBuffer || this.peakBuffer.length !== this.analyserNode.fftSize) {
+      this.peakBuffer = new Float32Array(this.analyserNode.fftSize)
+    }
+
+    this.analyserNode.getFloatTimeDomainData(this.peakBuffer as Float32Array<ArrayBuffer>)
+    let peak = 0
+    for (let i = 0; i < this.peakBuffer.length; i++) {
+      const abs = Math.abs(this.peakBuffer[i])
+      if (abs > peak) peak = abs
+    }
+    return peak
+  }
+
   dispose(): void {
     if (this._isRecording) {
       this.stopCapture()
+    }
+
+    if (this.workletNode) {
+      this.workletNode.disconnect()
+      this.workletNode = null
+    }
+
+    if (this.scriptProcessorNode) {
+      this.scriptProcessorNode.disconnect()
+      this.scriptProcessorNode = null
+    }
+
+    if (this.sourceNode) {
+      this.sourceNode.disconnect()
+      this.sourceNode = null
+    }
+
+    if (this.silentOutput) {
+      this.silentOutput.disconnect()
+      this.silentOutput = null
     }
 
     if (this.mediaStream) {
@@ -228,5 +273,6 @@ export class AudioRecorder {
     }
 
     this.analyserNode = null
+    this.peakBuffer = null
   }
 }

@@ -4,6 +4,16 @@ import { AudioRecorder } from './AudioRecorder'
 import { AudioTrack } from './AudioTrack'
 import { AudioMixer } from './AudioMixer'
 import { generateTrackId, fitBufferToLength } from '../utils/audioHelpers'
+import { estimateRoundTripLatencyMs } from './latencyCompensation'
+import {
+  computeMixMonitoringPeak,
+  getBufferPeak,
+  normalizeRecordingPeak,
+  overdubVolumeForMixBalance,
+} from './trackLeveling'
+
+/** ScriptProcessor output buffer size — must match createScriptProcessor() below. */
+const OUTPUT_BUFFER_SIZE = 2048
 
 export class LoopEngine {
   private audioContext: AudioContext | null = null
@@ -20,10 +30,12 @@ export class LoopEngine {
   private outputNode: ScriptProcessorNode | null = null
   private positionEmitCounter = 0
   private recordStartPosition = 0
-  // User-adjustable latency offset in ms: shifts overdub audio earlier in the loop
-  // to compensate for round-trip audio delay (output latency + recording delay).
-  // Positive = shift audio earlier, negative = shift later.
-  private _latencyOffsetMs = 0
+  // Real-time overdub capture: one loop-length buffer overwritten each pass.
+  private overdubBuffer: Float32Array | null = null
+  // Auto-detected round-trip latency plus optional manual fine-tune (ms).
+  // Positive total shifts overdub audio earlier in the loop.
+  private _autoLatencyOffsetMs = 0
+  private _manualLatencyOffsetMs = 0
 
   constructor(config: AudioEngineConfig, onEvent: (event: EngineEvent) => void) {
     this.config = config
@@ -59,13 +71,26 @@ export class LoopEngine {
   }
 
   get latencyOffsetMs(): number {
-    return this._latencyOffsetMs
+    return this._autoLatencyOffsetMs + this._manualLatencyOffsetMs
+  }
+
+  get autoLatencyOffsetMs(): number {
+    return this._autoLatencyOffsetMs
+  }
+
+  get manualLatencyOffsetMs(): number {
+    return this._manualLatencyOffsetMs
+  }
+
+  getInputPeakLevel(): number {
+    return this.recorder?.getInputPeakLevel() ?? 0
   }
 
   // --- Latency ---
 
+  /** Fine-tune on top of auto-detected compensation (ms). */
   setLatencyOffset(ms: number): void {
-    this._latencyOffsetMs = ms
+    this._manualLatencyOffsetMs = ms
   }
 
   // --- Lifecycle ---
@@ -83,7 +108,7 @@ export class LoopEngine {
 
     // Set up output node for playback
     // Use 0 input channels so onaudioprocess fires without needing an input source
-    this.outputNode = this.audioContext.createScriptProcessor(2048, 0, 1)
+    this.outputNode = this.audioContext.createScriptProcessor(OUTPUT_BUFFER_SIZE, 0, 1)
     this.outputNode.onaudioprocess = (event) => {
       const output = event.outputBuffer.getChannelData(0)
       this.processAudioOutput(output)
@@ -91,9 +116,12 @@ export class LoopEngine {
 
     this.outputNode.connect(this.audioContext.destination)
 
+    this.measureAutoLatency()
+
     this._state = LooperState.EMPTY
     this.emitSnapshot()
-    console.log('[LoopEngine] Initialized successfully. Sample rate:', this.config.sampleRate)
+    console.log('[LoopEngine] Initialized successfully. Sample rate:', this.config.sampleRate,
+      '| Auto latency compensation:', this._autoLatencyOffsetMs, 'ms')
   }
 
   // --- Recording ---
@@ -117,14 +145,22 @@ export class LoopEngine {
     console.log('[LoopEngine] AudioContext state:', this.audioContext?.state)
 
     // Reset recordStartPosition; it will be captured when the first audio sample arrives
-    // This compensates for recording latency (mic input has ~300ms delay)
     this.recordStartPosition = 0
 
-    // Pass a callback that fires when the first audio sample arrives
-    this.recorder!.startCapture(() => {
-      this.recordStartPosition = this.playheadPosition
-      console.log('[LoopEngine] First audio sample arrived, recordStartPosition =', this.recordStartPosition)
-    })
+    const isOverdub = this.tracks.length > 0
+    if (isOverdub) {
+      this.overdubBuffer = new Float32Array(this.masterLoopLength)
+    } else {
+      this.overdubBuffer = null
+    }
+
+    this.recorder!.startCapture(
+      () => {
+        this.recordStartPosition = this.playheadPosition
+        console.log('[LoopEngine] First audio sample arrived, recordStartPosition =', this.recordStartPosition)
+      },
+      isOverdub ? (samples) => this.writeOverdubSamples(samples) : undefined,
+    )
     this._state = LooperState.RECORDING
     this.emitSnapshot()
   }
@@ -137,81 +173,44 @@ export class LoopEngine {
 
     let buffer = this.recorder!.stopCapture()
 
-    let maxAmp = 0
-    let nonZero = 0
-    for (let i = 0; i < buffer.length; i++) {
-      const abs = Math.abs(buffer[i])
-      if (abs > maxAmp) maxAmp = abs
-      if (buffer[i] !== 0) nonZero++
-    }
-    console.log('[LoopEngine] Recorded buffer:', buffer.length, 'samples',
-      '| Non-zero samples:', nonZero,
-      '| Max amplitude:', maxAmp)
-
     const isFirstTrack = this.tracks.length === 0
 
-    if (!isFirstTrack) {
-      // Overdub: extract the last complete loop cycle from the recording.
-      // Recording started at playhead position `recordStartPosition`.
-      // Samples 0...(masterLoopLength - recordStartPosition - 1) cover the remainder of that first loop.
-      // After that, each `masterLoopLength` block is a complete loop aligned to position 0.
-      // We take the LAST complete loop so the user can practice over multiple loops
-      // and only the final one is kept.
-      const loopLen = this.masterLoopLength
-      let firstBoundary = loopLen - this.recordStartPosition // samples until first loop-0 boundary
+    if (!isFirstTrack && this.overdubBuffer) {
+      buffer = new Float32Array(this.overdubBuffer)
+      this.overdubBuffer = null
 
-      // If the recording extends past the first boundary, the user has looped
-      // back to position 0. Redefine firstBoundary to 0 so subsequent loops
-      // are aligned from position 0 rather than the original record-start offset.
-      if (buffer.length > firstBoundary) {
-        firstBoundary = 0
+      console.log('[LoopEngine] Overdub: real-time buffer used',
+        '| startPos=' + this.recordStartPosition,
+        '| autoOffsetMs=' + this._autoLatencyOffsetMs,
+        '| manualOffsetMs=' + this._manualLatencyOffsetMs,
+        '| totalOffsetMs=' + this.latencyOffsetMs)
+    } else if (!isFirstTrack) {
+      // Fallback if overdub buffer was not allocated (should not happen)
+      buffer = fitBufferToLength(buffer, this.masterLoopLength)
+    } else {
+      let maxAmp = 0
+      let nonZero = 0
+      for (let i = 0; i < buffer.length; i++) {
+        const abs = Math.abs(buffer[i])
+        if (abs > maxAmp) maxAmp = abs
+        if (buffer[i] !== 0) nonZero++
       }
-
-      // How many complete loops exist after the first boundary?
-      const samplesAfterBoundary = buffer.length > firstBoundary ? buffer.length - firstBoundary : 0
-      const completeLoops = Math.floor(samplesAfterBoundary / loopLen)
-
-      let aligned: Float32Array
-      if (completeLoops > 0) {
-        // Extract the last complete loop (already aligned to position 0)
-        const lastLoopStart = firstBoundary + (completeLoops - 1) * loopLen
-        aligned = buffer.slice(lastLoopStart, lastLoopStart + loopLen)
-      } else {
-        // Less than one full loop recorded — place audio where it was recorded
-        aligned = new Float32Array(loopLen)
-        for (let i = 0; i < buffer.length && i < loopLen; i++) {
-          const pos = (this.recordStartPosition + i) % loopLen
-          aligned[pos] = buffer[i]
-        }
-      }
-
-      // Apply user sync offset: shift audio left/right to fine-tune timing.
-      // Positive offset = shift right (later in loop).
-      // Negative offset = shift left (earlier in loop).
-      const offsetSamples = Math.round(this._latencyOffsetMs / 1000 * this.config.sampleRate)
-      if (offsetSamples !== 0) {
-        const shifted = new Float32Array(loopLen)
-        for (let i = 0; i < loopLen; i++) {
-          let srcPos = (i - offsetSamples) % loopLen
-          if (srcPos < 0) srcPos += loopLen
-          shifted[i] = aligned[srcPos]
-        }
-        aligned = shifted
-      }
-
-      console.log('[LoopEngine] Overdub: startPos=' + this.recordStartPosition,
-        '| rawLen=' + buffer.length,
-        '| completeLoops=' + completeLoops,
-        '| offsetMs=' + this._latencyOffsetMs,
-        '| offsetSamples=' + offsetSamples)
-
-      buffer = aligned
+      console.log('[LoopEngine] Recorded buffer:', buffer.length, 'samples',
+        '| Non-zero samples:', nonZero,
+        '| Max amplitude:', maxAmp)
     }
 
-    return this.addTrackFromBuffer(buffer)
+    if (isFirstTrack) {
+      buffer = normalizeRecordingPeak(buffer)
+    }
+
+    return this.addTrackFromBuffer(buffer, { isOverdub: !isFirstTrack })
   }
 
-  addTrackFromBuffer(buffer: Float32Array): TrackSnapshot {
+  addTrackFromBuffer(
+    buffer: Float32Array,
+    options: { isOverdub?: boolean } = {},
+  ): TrackSnapshot {
     const isFirstTrack = this.tracks.length === 0
     if (isFirstTrack) {
       this.masterLoopLength = buffer.length
@@ -221,6 +220,22 @@ export class LoopEngine {
 
     const trackId = generateTrackId()
     const track = new AudioTrack(trackId, this.nextTrackIndex++, buffer, this.config.sampleRate)
+
+    if (options.isOverdub) {
+      const mixPeak = computeMixMonitoringPeak(
+        this.tracks,
+        this.masterLoopLength,
+        this.mixer.getMasterVolume(),
+      )
+      const overdubPeak = getBufferPeak(buffer)
+      const matchedVolume = overdubVolumeForMixBalance(overdubPeak, mixPeak)
+      track.setVolume(matchedVolume)
+      console.log('[LoopEngine] Overdub level match:',
+        '| mixPeak=', mixPeak.toFixed(4),
+        '| overdubPeak=', overdubPeak.toFixed(4),
+        '| volume=', matchedVolume.toFixed(3))
+    }
+
     this.tracks.push(track)
     this.redoStack = []
 
@@ -408,6 +423,7 @@ export class LoopEngine {
     this.redoStack = []
     this.playheadPosition = 0
     this.masterLoopLength = 0
+    this.overdubBuffer = null
 
     if (this.outputNode) {
       this.outputNode.onaudioprocess = null
@@ -426,6 +442,35 @@ export class LoopEngine {
   }
 
   // --- Private ---
+
+  private measureAutoLatency(): void {
+    if (!this.audioContext) return
+
+    const inputBufferSize = this.recorder?.usesWorklet ? 128 : 4096
+    this._autoLatencyOffsetMs = estimateRoundTripLatencyMs(this.audioContext, {
+      outputBufferSize: OUTPUT_BUFFER_SIZE,
+      inputBufferSize,
+    })
+  }
+
+  private getEffectiveLatencyOffsetSamples(): number {
+    const totalMs = this.latencyOffsetMs
+    return Math.round((totalMs / 1000) * this.config.sampleRate)
+  }
+
+  /** Write incoming mic samples into the overdub buffer, compensated for round-trip latency. */
+  private writeOverdubSamples(samples: Float32Array): void {
+    if (!this.overdubBuffer || this.masterLoopLength === 0) return
+
+    const loopLen = this.masterLoopLength
+    const offsetSamples = this.getEffectiveLatencyOffsetSamples()
+    let pos = (this.playheadPosition - offsetSamples + loopLen) % loopLen
+
+    for (let i = 0; i < samples.length; i++) {
+      this.overdubBuffer[pos] = samples[i]
+      pos = (pos + 1) % loopLen
+    }
+  }
 
   private async resampleBuffer(input: Float32Array, fromRate: number, inputLength: number): Promise<Float32Array> {
     const targetLength = Math.ceil(inputLength * this.config.sampleRate / fromRate)
