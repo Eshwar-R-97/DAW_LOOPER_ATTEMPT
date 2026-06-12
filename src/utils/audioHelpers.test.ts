@@ -5,6 +5,7 @@ import {
   fitBufferToLength,
   generateWaveformPeaks,
   clamp,
+  softLimit,
   generateTrackId,
 } from './audioHelpers'
 
@@ -134,6 +135,22 @@ describe('generateWaveformPeaks', () => {
     result.forEach((peak) => {
       expect(peak).toBe(0)
     })
+  })
+})
+
+describe('softLimit', () => {
+  it('passes through values within ±1', () => {
+    expect(softLimit(0.5)).toBe(0.5)
+    expect(softLimit(-0.75)).toBe(-0.75)
+  })
+
+  it('soft-compresses values above 1', () => {
+    expect(softLimit(1.5)).toBeCloseTo(Math.tanh(1.5))
+    expect(softLimit(1.5)).toBeLessThan(1.5)
+  })
+
+  it('soft-compresses values below -1', () => {
+    expect(softLimit(-2)).toBeCloseTo(Math.tanh(-2))
   })
 })
 

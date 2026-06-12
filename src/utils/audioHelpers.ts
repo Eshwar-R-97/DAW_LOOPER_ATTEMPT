@@ -69,6 +69,14 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
+/** Soft-limit playback samples beyond ±1 to reduce harsh digital clipping. */
+export function softLimit(sample: number): number {
+  if (sample > 1 || sample < -1) {
+    return Math.tanh(sample)
+  }
+  return sample
+}
+
 /** Generate a unique track ID */
 let trackIdCounter = 0
 export function generateTrackId(): string {
