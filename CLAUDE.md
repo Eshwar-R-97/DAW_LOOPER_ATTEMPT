@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DAW Looper is a loop-based Digital Audio Workstation designed for beatboxers, inspired by the BOSS Loop Station (RC-505mkII/RC-600). The core workflow: record a first track that sets the master loop length, then layer subsequent tracks via overdub while hearing previous tracks. Each track is independent with its own mute/volume controls.
+**DAW Host** is a traditional desktop DAW being built to host third-party audio plugins (VST3, AU, CLAP) via a native JUCE sidecar, with a React UI in Electron. The primary user-facing mode is the **linear timeline DAW** (`DawView`).
 
-See `projectoverview.md` for the full feature spec and `project_plan.md` for the implementation plan.
+A **dormant loop-station mode** (`LooperView`, `LoopEngine`) remains in the codebase for reference and possible future fork — it is not exposed in the normal UI. Dev access only: `?mode=looper` or `VITE_ENABLE_LOOPER=true`.
+
+See `projectoverview.md` for the full feature spec and the traditional DAW plan for implementation phases.
 
 ## Commands
 
@@ -20,19 +22,19 @@ See `projectoverview.md` for the full feature spec and `project_plan.md` for the
 
 Three-layer architecture: Audio Engine → Zustand Store → React UI.
 
-**Audio Engine** (`src/engine/`) — Pure TypeScript, no DOM/React dependencies:
-- `LoopEngine` — Main orchestrator: record → overdub → play lifecycle
-- `AudioRecorder` — Mic capture via Web Audio API ScriptProcessorNode
-- `AudioTrack` — Single track buffer with volume/mute/sample retrieval (looping via modulo wrap)
-- `AudioMixer` — Sums samples from all tracks, applies master volume, clamps to [-1,1]
+**DAW (primary)** — `src/engine/DawEngine.ts`, `src/store/useDawStore.ts`, `src/components/DawView.tsx`:
+- Linear timeline: record at playhead, clip arrangement, transport
+- Evolving toward native JUCE sidecar for plugin hosting (Phase 1+)
 
-**State** (`src/store/`) — Zustand store bridges engine events to React. Engine emits `EngineEvent`s, store listens and updates, React re-renders via selectors.
+**Looper (dormant)** — `src/engine/LoopEngine.ts`, `src/store/useLooperStore.ts`, `src/components/LooperView.tsx`:
+- BOSS Loop Station–style overdub workflow; kept for tests and dev-only access
+- Not wired into the default app shell
 
-**UI** (`src/components/`) — React components: TransportBar, LoopProgressBar, TrackList, TrackRow, WaveformDisplay, EmptyState.
+**Shared audio** (`src/engine/AudioRecorder.ts`, utilities in `src/engine/` and `src/utils/`):
+- Web Audio mic capture; latency compensation and leveling utilities
 
 ## Key Constraints
 
-- **Low latency is critical** — real-time audio performance tool
-- **Sample-accurate loop sync** — all tracks stay aligned via shared playhead
-- **First track's length = master loop length** — subsequent tracks trimmed/padded to fit
+- **Low latency is critical** for real-time audio
+- **Plugin hosting requires native code** — browser Web Audio cannot load VST3/AU
 - **TDD workflow** — tests written before implementation (Red → Green → Refactor)

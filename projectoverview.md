@@ -1,6 +1,19 @@
-# DAW Looper - Project Overview
+# DAW Host - Project Overview
 
-## Vision
+## Current Direction (2026)
+
+This project is pivoting from a loop-station app to a **traditional DAW that hosts third-party plugins** (VST3, AU, CLAP). The default UI is the **linear timeline DAW** (`DawView`). Real plugin hosting will run in a **JUCE native sidecar** behind an **Electron** shell (see implementation plan).
+
+**Looper mode** (BOSS Loop Station workflow below) remains in the codebase as dormant / unfinished code — not shown in the normal UI. It may be revived or forked to a separate project later.
+
+---
+
+## Legacy: Loop Station Mode (dormant)
+
+The following sections describe the original loop-station vision, preserved for reference.
+
+# DAW Looper - Original Vision
+
 
 A browser/desktop DAW (Digital Audio Workstation) designed specifically for **beatboxers and vocal percussionists**, built around a **loop-based recording workflow** inspired by the **BOSS Loop Station** pedal series (RC-505mkII / RC-600). The core idea is to replicate and extend the intuitive record-overdub-layer workflow that beatboxers use in live performance, but in a software environment with additional features and visual feedback.
 
@@ -180,4 +193,8 @@ Notable beatboxers who use Loop Stations: MB14, Inkie, Saro, Rythmind, Gene Shin
 
 ## Summary
 
-DAW Looper is a loop-based recording application that brings the BOSS Loop Station workflow to software, tailored for beatboxers. The first track sets the loop length, subsequent tracks are layered on top via an overdub workflow, and each track is independently controllable. The MVP focuses on the core loop-record-layer-mute workflow with a clean, track-based UI. Future versions will add effects, quantization, session management, and hardware integration.
+**DAW Host** is becoming a traditional plugin-hosting DAW. The loop-station workflow below was the original MVP; that code path is dormant while DAW + plugin hosting is the active direction.
+
+---
+
+DAW Looper (legacy summary): A loop-based recording application that brings the BOSS Loop Station workflow to software, tailored for beatboxers. The first track sets the loop length, subsequent tracks are layered on top via an overdub workflow, and each track is independently controllable.
