@@ -12,7 +12,10 @@ See `projectoverview.md` for the full feature spec and the traditional DAW plan 
 
 ## Commands
 
-- `npm run dev` — start dev server (Vite)
+- `npm run dev` — start Vite dev server (web UI only)
+- `npm run build:native` — build JUCE `audio-host` sidecar (required before Electron)
+- `npm run electron:dev` — Vite + Electron with native audio sidecar
+- `npm run electron:start` — production build + Electron
 - `npm test` — run all tests once (Vitest)
 - `npm run test:watch` — run tests in watch mode
 - `npm run build` — TypeScript check + production build
@@ -20,9 +23,15 @@ See `projectoverview.md` for the full feature spec and the traditional DAW plan 
 
 ## Architecture
 
-Three-layer architecture: Audio Engine → Zustand Store → React UI.
+Three-layer architecture evolving toward: **JUCE sidecar (audio/plugins)** → **Electron main (IPC bridge)** → **React renderer (UI)**.
 
-**DAW (primary)** — `src/engine/DawEngine.ts`, `src/store/useDawStore.ts`, `src/components/DawView.tsx`:
+**Native audio host** (`native/audio-host/`) — JUCE console app, JSON-RPC over stdio:
+- Phase 1: `ping`, `shutdown`, `get_devices`, `set_device`
+- Future: plugin scan/load, transport, `AudioProcessorGraph` playback
+
+**Electron** (`electron/`) — spawns sidecar via `AudioHostService`, exposes IPC to renderer.
+
+**DAW (primary UI)** — `src/engine/DawEngine.ts`, `src/store/useDawStore.ts`, `src/components/DawView.tsx`:
 - Linear timeline: record at playhead, clip arrangement, transport
 - Evolving toward native JUCE sidecar for plugin hosting (Phase 1+)
 
