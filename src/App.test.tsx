@@ -1,35 +1,33 @@
 import { render, screen } from '@testing-library/react'
 import App from './App'
 
-// Mock the store to avoid initializing real audio engine
-vi.mock('./store/useLooperStore', async () => {
-  const types = await import('./types')
-
+vi.mock('./store/useDawStore', () => {
   const mockState = {
-    looperState: types.LooperState.EMPTY,
-    tracks: [],
-    masterLoopLength: 0,
+    playbackState: 'idle' as const,
+    clips: [],
     currentPosition: 0,
+    timelineLength: 0,
     masterVolume: 1.0,
     error: null,
-    canUndo: false,
-    canRedo: false,
     engine: null,
     initializeEngine: vi.fn().mockResolvedValue(undefined),
+    play: vi.fn(),
+    stop: vi.fn(),
+    seekTo: vi.fn(),
     startRecording: vi.fn(),
     stopRecording: vi.fn(),
-    playAll: vi.fn(),
-    stopAll: vi.fn(),
-    toggleTrackMute: vi.fn(),
-    setTrackVolume: vi.fn(),
+    moveClip: vi.fn(),
+    deleteClip: vi.fn(),
+    setClipVolume: vi.fn(),
+    toggleClipMute: vi.fn(),
+    setClipReverb: vi.fn(),
+    setClipPitch: vi.fn(),
     setMasterVolume: vi.fn(),
-    undoLastTrack: vi.fn(),
-    redoTrack: vi.fn(),
     dispose: vi.fn(),
   }
 
   return {
-    useLooperStore: Object.assign(
+    useDawStore: Object.assign(
       (selector: (state: typeof mockState) => unknown) => selector(mockState),
       {
         getState: () => mockState,
@@ -41,23 +39,14 @@ vi.mock('./store/useLooperStore', async () => {
 })
 
 describe('App', () => {
-  it('renders without crashing', () => {
+  it('renders DAW Host as the default shell', () => {
     render(<App />)
-    expect(screen.getByText(/daw looper/i)).toBeInTheDocument()
+    expect(screen.getByText(/daw host/i)).toBeInTheDocument()
   })
 
-  it('renders the transport bar', () => {
+  it('renders DAW transport controls by default', () => {
     render(<App />)
-    expect(screen.getByTestId('record-button')).toBeInTheDocument()
-  })
-
-  it('renders the empty state when no tracks', () => {
-    render(<App />)
-    expect(screen.getByText(/press record/i)).toBeInTheDocument()
-  })
-
-  it('renders the loop progress bar', () => {
-    render(<App />)
-    expect(screen.getByRole('progressbar')).toBeInTheDocument()
+    expect(screen.getByLabelText(/record/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/play/i)).toBeInTheDocument()
   })
 })
