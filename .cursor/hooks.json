@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeReadFile": [
+      {
+        "command": "node .cursor/hooks/read-boundary.cjs",
+        "description": "Block file reads outside workspace and configured reference paths"
+      }
+    ]
+  }
+}

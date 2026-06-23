@@ -4,7 +4,7 @@
 
 ## Issue 1: Overdub Does Not Save the Final Loop Pass
 
-### Status: Open
+### Status: Fixed (real-time overwriting buffer)
 
 ### Description
 
@@ -80,7 +80,7 @@ Instead of recording everything into one long buffer and slicing after the fact,
 
 ## Issue 2: Latency / Audio Desync on Overdub Tracks
 
-### Status: Open
+### Status: Fixed (auto compensation + manual fine-tune)
 
 ### Description
 
@@ -105,17 +105,16 @@ Multiple sources of latency compound to create the desync:
 
 ### Fix Plan
 
-_To be determined._ Possible directions to explore:
-- Automatic latency detection (e.g., loopback test measuring round-trip delay)
-- Using `AudioContext.outputLatency` and `AudioContext.baseLatency` properties to estimate offset
-- Compensating at the AudioWorklet level where timing is more precise
-- Adjusting the playhead reference point used during recording to account for known output buffer size
+**Implemented:**
+- `estimateRoundTripLatencyMs()` uses `AudioContext.baseLatency`, `outputLatency`, output buffer size (2048), and input capture quantum (128 worklet / 4096 ScriptProcessor fallback).
+- Measured automatically on engine `initialize()`; applied during real-time overdub writes (shifts placement earlier in the loop).
+- Manual fine-tune slider (-500…500ms) stacks on top of auto compensation.
 
 ---
 
 ## Issue 3: Audio Clipping / Quality Degradation
 
-### Status: Open
+### Status: Fixed (raw mic + soft limiting + input meter)
 
 ### Description
 
@@ -148,10 +147,31 @@ This issue may stem from multiple overlapping factors, and it's unclear which is
 
 ### Fix Plan
 
-_To be determined._ Likely partially resolved by fixing Issue 1 (eliminates buffer slicing data loss) and Issue 2 (eliminates alignment-shift data loss). Additional steps to investigate:
-- Disable Chrome's audio processing in `getUserMedia` constraints: `{ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }`
-- Check if the AudioWorklet path vs ScriptProcessor path differs in quality
-- Add input level monitoring to the UI so the user can see if their mic signal is too hot
-- Investigate whether the mixer clamp is causing audible hard clipping
+**Implemented (Issues 1 & 2 also removed slicing/alignment data loss):**
+- Raw `getUserMedia` constraints — AGC, noise suppression, and echo cancellation disabled (`micConstraints.ts`).
+- Capture graph uses zero-gain output instead of routing mic to speakers (prevents feedback / double monitoring on ScriptProcessor fallback).
+- Persistent mic analyser for live **INPUT** level meter with “hot” warning above 95%.
+- Playback mixer uses `softLimit()` (tanh above ±1) instead of hard clamp to reduce harsh clipping when layers sum loud.
+
+---
+
+## Issue 4: Recorded Layer Volume Doesn't Match Heard Backing
+
+### Status: Fixed (mix-aware level matching)
+
+### Description
+
+When overdubbing, a new layer often sounded much louder or quieter than it did relative to the backing tracks while recording. The user performed to match what they heard in the mix, but playback did not reflect that balance.
+
+### Root Cause
+
+- Existing tracks play through **volume²** perceptual gain and **master volume**.
+- New overdubs were always stored at **raw mic level** with the volume knob at **1.0** (gain = 1).
+- Example: Track 1 at 50% knob → heard at 25% gain. User performs to match. New track saved at full mic level → plays 4× louder in the mix.
+
+### Fix
+
+- **First track:** `normalizeRecordingPeak()` scales hot recordings to ~0.85 peak for headroom.
+- **Overdubs:** After capture, `overdubVolumeForMixBalance()` sets the new track's volume so its peak output matches the monitored backing mix (`trackLeveling.ts`).
 
 ---

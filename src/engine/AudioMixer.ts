@@ -1,5 +1,5 @@
 import { AudioTrack } from './AudioTrack'
-import { clamp } from '../utils/audioHelpers'
+import { clamp, softLimit } from '../utils/audioHelpers'
 
 export class AudioMixer {
   private masterVolume: number
@@ -21,7 +21,7 @@ export class AudioMixer {
     for (const track of tracks) {
       sum += track.getSample(position)
     }
-    return clamp(sum * this.masterVolume, -1.0, 1.0)
+    return softLimit(sum * this.masterVolume)
   }
 
   mixTracks(tracks: AudioTrack[], position: number, bufferLength: number): Float32Array {
@@ -32,7 +32,7 @@ export class AudioMixer {
       for (const track of tracks) {
         sum += track.getSample(position + i)
       }
-      output[i] = clamp(sum * this.masterVolume, -1.0, 1.0)
+      output[i] = softLimit(sum * this.masterVolume)
     }
 
     return output

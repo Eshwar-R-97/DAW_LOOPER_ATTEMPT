@@ -31,6 +31,7 @@ interface LooperStore {
   deleteTrack: (trackId: string) => void
   undoLastTrack: () => void
   redoTrack: () => void
+  autoLatencyOffsetMs: number
   latencyOffsetMs: number
   setLatencyOffset: (ms: number) => void
   loadTrackFromUrl: (url: string) => Promise<void>
@@ -93,6 +94,10 @@ export const useLooperStore = create<LooperStore>((set, get) => {
       const engine = new LoopEngine(mergedConfig, handleEngineEvent)
       set({ engine })
       await engine.initialize()
+      set({
+        autoLatencyOffsetMs: engine.autoLatencyOffsetMs,
+        latencyOffsetMs: engine.manualLatencyOffsetMs,
+      })
     },
 
     startRecording: () => {
@@ -161,6 +166,7 @@ export const useLooperStore = create<LooperStore>((set, get) => {
     isLoadingExternalTrack: false,
     externalTrackError: null,
 
+    autoLatencyOffsetMs: 0,
     latencyOffsetMs: 0,
 
     setLatencyOffset: (ms: number) => {

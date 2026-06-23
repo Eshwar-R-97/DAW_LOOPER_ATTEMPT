@@ -8,6 +8,7 @@ import { RotaryKnob } from './components/RotaryKnob'
 import { SampleFinderPanel } from './components/SampleFinderPanel'
 import { ModeSelector } from './components/ModeSelector'
 import { DawView } from './components/DawView'
+import { InputLevelMeter } from './components/InputLevelMeter'
 
 function App() {
   const [appMode, setAppMode] = useState<'looper' | 'daw'>('looper')
@@ -27,6 +28,7 @@ function App() {
   const deleteTrack = useLooperStore((s) => s.deleteTrack)
   const undoLastTrack = useLooperStore((s) => s.undoLastTrack)
   const redoTrack = useLooperStore((s) => s.redoTrack)
+  const autoLatencyOffsetMs = useLooperStore((s) => s.autoLatencyOffsetMs)
   const latencyOffsetMs = useLooperStore((s) => s.latencyOffsetMs)
   const setLatencyOffset = useLooperStore((s) => s.setLatencyOffset)
   const masterVolume = useLooperStore((s) => s.masterVolume)
@@ -119,6 +121,8 @@ function App() {
           isPlaying={looperState === LooperState.PLAYING}
         />
 
+        <InputLevelMeter />
+
         <SampleFinderPanel onLoadSample={loadTrackFromUrl} />
 
         <TrackList
@@ -139,7 +143,10 @@ function App() {
           />
           <div className="latency-adjust">
             <label>
-              Sync offset: {latencyOffsetMs > 0 ? '→ ' : latencyOffsetMs < 0 ? '← ' : ''}{Math.abs(latencyOffsetMs)}ms
+              Auto sync: {autoLatencyOffsetMs}ms
+              {latencyOffsetMs !== 0 && (
+                <> · Fine-tune: {latencyOffsetMs > 0 ? '+' : ''}{latencyOffsetMs}ms</>
+              )}
             </label>
             <input
               type="range"
@@ -148,6 +155,7 @@ function App() {
               step="5"
               value={latencyOffsetMs}
               onChange={(e) => setLatencyOffset(Number(e.target.value))}
+              aria-label="Fine-tune sync offset"
             />
           </div>
         </div>

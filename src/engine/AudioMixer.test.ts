@@ -1,5 +1,6 @@
 import { AudioMixer } from './AudioMixer'
 import { AudioTrack } from './AudioTrack'
+import { softLimit } from '../utils/audioHelpers'
 
 const SAMPLE_RATE = 44100
 
@@ -85,15 +86,14 @@ describe('AudioMixer', () => {
       expect(mixer.mixSample([track1, track2], 0)).toBeCloseTo(0.5)
     })
 
-    it('clamps output to -1.0 to 1.0', () => {
+    it('soft-limits output above 1.0 instead of hard clipping', () => {
       const mixer = new AudioMixer()
       const track1 = createTrack('t1', 0, 100, 0.8)
       const track2 = createTrack('t2', 1, 100, 0.7)
-      // 0.8 + 0.7 = 1.5 → clamped to 1.0
-      expect(mixer.mixSample([track1, track2], 0)).toBe(1.0)
+      expect(mixer.mixSample([track1, track2], 0)).toBeCloseTo(softLimit(1.5))
     })
 
-    it('clamps negative overflow to -1.0', () => {
+    it('soft-limits negative overflow', () => {
       const mixer = new AudioMixer()
       const buffer1 = new Float32Array(100)
       buffer1.fill(-0.8)
@@ -101,8 +101,7 @@ describe('AudioMixer', () => {
       const buffer2 = new Float32Array(100)
       buffer2.fill(-0.7)
       const track2 = new AudioTrack('t2', 1, buffer2, SAMPLE_RATE)
-      // -0.8 + -0.7 = -1.5 → clamped to -1.0
-      expect(mixer.mixSample([track1, track2], 0)).toBe(-1.0)
+      expect(mixer.mixSample([track1, track2], 0)).toBeCloseTo(softLimit(-1.5))
     })
   })
 
@@ -170,14 +169,14 @@ describe('AudioMixer', () => {
       }
     })
 
-    it('clamps all values to prevent clipping', () => {
+    it('soft-limits all values to prevent harsh clipping', () => {
       const mixer = new AudioMixer()
       const track1 = createTrack('t1', 0, 100, 0.9)
       const track2 = createTrack('t2', 1, 100, 0.8)
       const result = mixer.mixTracks([track1, track2], 0, 5)
+      const expected = softLimit(1.7)
       for (let i = 0; i < 5; i++) {
-        // 0.9 + 0.8 = 1.7 → clamped to 1.0
-        expect(result[i]).toBe(1.0)
+        expect(result[i]).toBeCloseTo(expected)
       }
     })
   })
