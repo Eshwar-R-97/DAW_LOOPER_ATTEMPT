@@ -3,6 +3,12 @@ node_modules/
 
 # Build output
 dist/
+dist-electron/
+release/
+
+# Native build artifacts
+native/audio-host/build/
+native/audio-host/_deps/
 
 # Environment variables — never commit these
 .env
